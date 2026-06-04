@@ -7,7 +7,7 @@ import streamlit as st
 PLATES_FILE = "plates.json"
  
 RESTAURANT_TYPES = [
-    "Specialty Coffee Shop",
+    "Cafe Shop",
     "Bakery & Pastry",
     "Juice & Smoothie Bar",
     "Breakfast & Brunch Café",
