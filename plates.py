@@ -1,101 +1,114 @@
 import json
 import os
 import pandas as pd
-
+import anthropic
+import streamlit as st
+ 
 PLATES_FILE = "plates.json"
-
-# Pre-recommended café plates with typical ingredients
-DEFAULT_PLATES = [
-    {
-        "name": "Flat White",
-        "ingredients": [
-            {"description": "Espresso Beans", "quantity_kg": 0.018},
-            {"description": "Full Cream Milk", "quantity_kg": 0.15}
-        ]
-    },
-    {
-        "name": "Cappuccino",
-        "ingredients": [
-            {"description": "Espresso Beans", "quantity_kg": 0.018},
-            {"description": "Full Cream Milk", "quantity_kg": 0.12}
-        ]
-    },
-    {
-        "name": "Avocado Toast",
-        "ingredients": [
-            {"description": "Avocado", "quantity_kg": 0.15},
-            {"description": "Sourdough Bread", "quantity_kg": 0.08},
-            {"description": "Lemon", "quantity_kg": 0.03}
-        ]
-    },
-    {
-        "name": "Banana Bread (slice)",
-        "ingredients": [
-            {"description": "Banana", "quantity_kg": 0.12},
-            {"description": "Flour", "quantity_kg": 0.08},
-            {"description": "Eggs", "quantity_kg": 0.05},
-            {"description": "Butter", "quantity_kg": 0.03}
-        ]
-    },
-    {
-        "name": "Acai Bowl",
-        "ingredients": [
-            {"description": "Acai", "quantity_kg": 0.15},
-            {"description": "Banana", "quantity_kg": 0.1},
-            {"description": "Granola", "quantity_kg": 0.05}
-        ]
-    }
+ 
+RESTAURANT_TYPES = [
+    "Specialty Coffee Shop",
+    "Bakery & Pastry",
+    "Juice & Smoothie Bar",
+    "Breakfast & Brunch Café",
+    "Italian Restaurant",
+    "Mexican Restaurant",
+    "Asian Restaurant",
+    "Pizza Shop",
+    "Burger & Grill",
+    "Vegan & Healthy Food",
+    "Sandwich & Deli",
+    "Ice Cream & Desserts"
 ]
-
-
+ 
+ 
+def generate_plates_for_restaurant(restaurant_type: str) -> list:
+    """Call Claude to generate typical dishes and ingredients for a restaurant type."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
+    client = anthropic.Anthropic(api_key=api_key)
+ 
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=2000,
+        messages=[
+            {
+                "role": "user",
+                "content": f"""You are helping set up a food cost tracking app for a {restaurant_type}.
+ 
+Generate 8 typical menu items for this type of business.
+Return ONLY a JSON array, no markdown, no explanation.
+ 
+Each object must have:
+- name (string): the menu item name
+- ingredients (array): list of ingredient objects, each with:
+  - description (string): ingredient name as it would appear on a supplier invoice
+  - quantity_kg (number): typical quantity in kg used per serving (use decimals, e.g. 0.15)
+ 
+Example format:
+[
+  {{
+    "name": "Flat White",
+    "ingredients": [
+      {{"description": "Espresso Beans", "quantity_kg": 0.018}},
+      {{"description": "Full Cream Milk", "quantity_kg": 0.15}}
+    ]
+  }}
+]
+ 
+Be realistic with quantities. Only return the JSON array."""
+            }
+        ]
+    )
+ 
+    raw = response.content[0].text
+    raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    return json.loads(raw)
+ 
+ 
 def load_plates() -> list:
-    """Load plates from file, or return defaults if none exist."""
+    """Load plates from file."""
     if os.path.exists(PLATES_FILE):
         with open(PLATES_FILE, "r") as f:
             return json.load(f)
-    return DEFAULT_PLATES
-
-
+    return []
+ 
+ 
 def save_plates(plates: list):
     """Save plates to file."""
     with open(PLATES_FILE, "w") as f:
         json.dump(plates, f, indent=2)
-
-
+ 
+ 
+def plates_exist() -> bool:
+    """Check if plates have been set up."""
+    return os.path.exists(PLATES_FILE)
+ 
+ 
 def get_latest_prices(df: pd.DataFrame) -> dict:
-    """
-    Extract latest unit price per ingredient from invoice data.
-    Returns dict: {description_lower: unit_price}
-    """
+    """Extract latest unit price per ingredient from invoice data."""
     if df.empty:
         return {}
     cogs_df = df[df["category"] == "COGS"].copy()
     cogs_df["description_lower"] = cogs_df["description"].str.lower().str.strip()
     latest = cogs_df.sort_values("invoice").groupby("description_lower")["unit_price"].last()
     return latest.to_dict()
-
-
+ 
+ 
 def calculate_plate_cost(plate: dict, prices: dict) -> dict:
-    """
-    Calculate cost of a plate based on latest ingredient prices.
-    Returns plate with cost_per_unit and matched/unmatched ingredients.
-    """
+    """Calculate cost of a plate based on latest ingredient prices."""
     total_cost = 0.0
     breakdown = []
-
+ 
     for ingredient in plate["ingredients"]:
         key = ingredient["description"].lower().strip()
         qty = ingredient["quantity_kg"]
-
-        # Try fuzzy match — check if any price key contains the ingredient name
+ 
         matched_price = None
-        matched_name = None
         for price_key, price_val in prices.items():
             if key in price_key or price_key in key:
                 matched_price = price_val
-                matched_name = price_key
                 break
-
+ 
         if matched_price:
             cost = matched_price * qty
             total_cost += cost
@@ -114,7 +127,7 @@ def calculate_plate_cost(plate: dict, prices: dict) -> dict:
                 "cost": None,
                 "matched": False
             })
-
+ 
     return {
         "name": plate["name"],
         "total_cost": total_cost,
