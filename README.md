@@ -3,12 +3,7 @@
 
 BookePaid automates the painful manual process of extracting, categorising, and tracking supplier invoice data — giving small food and beverage businesses a real-time view of their cost of goods sold (COGS) without spreadsheets.
 
----
 
-## Live Demo
-🔗 [bookepaid.streamlit.app](https://bookepaid.streamlit.app) *(access code required)*
-
----
 
 ## Features
 
@@ -67,4 +62,4 @@ bookepaid/
 Juan Pablo Martinez — Finance & Data professional based in Melbourne, Australia.
 Combining a background in commercial finance (CPA candidate) with applied AI development.
 
-[LinkedIn](https://linkedin.com/in/yourprofile) · [GitHub](https://github.com/jotape96)
+[LinkedIn](https://www.linkedin.com/in/juan2996/) · [GitHub](https://github.com/jotape96)
