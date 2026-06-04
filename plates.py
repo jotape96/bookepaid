@@ -117,7 +117,7 @@ def calculate_plate_cost(plate: dict, prices: dict) -> dict:
             total_cost += cost
             breakdown.append({
                 "ingredient": ingredient["description"],
-                "qty_kg": qty,
+                "qty_g": round(qty * 1000, 1),
                 "unit_price": matched_price,
                 "cost": cost,
                 "matched": True
@@ -125,7 +125,7 @@ def calculate_plate_cost(plate: dict, prices: dict) -> dict:
         else:
             breakdown.append({
                 "ingredient": ingredient["description"],
-                "qty_kg": qty,
+                "qty_g": round(qty * 1000, 1),
                 "unit_price": None,
                 "cost": None,
                 "matched": False
