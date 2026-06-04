@@ -1,5 +1,5 @@
 import streamlit as st
-
+import os
 
 def check_password():
     if "authenticated" not in st.session_state:
@@ -10,9 +10,8 @@ def check_password():
         st.subheader("Welcome — please enter your access code")
         password = st.text_input("Access code", type="password")
         if st.button("Login"):
-            valid_passwords = st.secrets.get("APP_PASSWORDS", "").split(",")
-            valid_passwords = [p.strip() for p in valid_passwords]
-            st.write(f"Debug — valid passwords: {valid_passwords}")  # temporary
+            raw = os.environ.get("APP_PASSWORDS") or st.secrets.get("APP_PASSWORDS", "")
+            valid_passwords = [p.strip() for p in raw.split(",")]
             if password in valid_passwords:
                 st.session_state.authenticated = True
                 st.rerun()
