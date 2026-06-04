@@ -21,7 +21,7 @@ RESTAURANT_TYPES = [
     "Ice Cream & Desserts",
     "Middle Eastern Restaurant",
     "Indian Restaurant",
-    "Kebab & Street Food"
+    "Kebab & Street Food",
 ]
  
  
