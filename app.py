@@ -133,7 +133,13 @@ if uploaded_file is not None:
 
         raw = response.content[0].text
         raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        tems = json.loads(raw)
+        try:
+            items = json.loads(raw)
+        except json.JSONDecodeError:
+            st.error(f"Could not parse response. Raw output was: {raw}")
+            st.stop()
+
+        items = json.loads(raw)
         new_df = pd.DataFrame(items)
         new_df["invoice"] = uploaded_file.name
         combined_df = pd.concat([existing_df, new_df], ignore_index=True)
