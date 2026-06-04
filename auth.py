@@ -2,7 +2,6 @@ import streamlit as st
 
 
 def check_password():
-    """Simple password gate supporting multiple access codes."""
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
 
@@ -13,6 +12,7 @@ def check_password():
         if st.button("Login"):
             valid_passwords = st.secrets.get("APP_PASSWORDS", "").split(",")
             valid_passwords = [p.strip() for p in valid_passwords]
+            st.write(f"Debug — valid passwords: {valid_passwords}")  # temporary
             if password in valid_passwords:
                 st.session_state.authenticated = True
                 st.rerun()
