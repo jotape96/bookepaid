@@ -179,8 +179,41 @@ elif page == "🍽️ Plate Costing":
     for i, plate in enumerate(plates):
         result = calculate_plate_cost(plate, prices)
         with st.expander(f"{'🟢' if not result['has_unmatched'] else '🟡'} {plate['name']} — ${result['total_cost']:.2f}"):
-            breakdown_df = pd.DataFrame(result["breakdown"])
-            st.dataframe(breakdown_df, use_container_width=True)
+            
+            # Edit ingredients
+            st.caption("Edit quantities (grams) per ingredient:")
+            updated_ingredients = []
+            for j, ingredient in enumerate(plate["ingredients"]):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.text(ingredient["description"])
+                with col2:
+                    new_qty = st.number_input(
+                        "g",
+                        value=round(ingredient["quantity_kg"] * 1000, 1),
+                        min_value=0.1,
+                        step=1.0,
+                        key=f"qty_{i}_{j}"
+                    )
+                updated_ingredients.append({
+                    "description": ingredient["description"],
+                    "quantity_kg": new_qty / 1000
+                })
+
+            col_save, col_delete = st.columns([1, 1])
+            with col_save:
+                if st.button("💾 Save Changes", key=f"save_{i}"):
+                    plates[i]["ingredients"] = updated_ingredients
+                    save_plates(plates)
+                    st.success("Saved!")
+                    st.rerun()
+            with col_delete:
+                if st.button("🗑️ Delete Plate", key=f"delete_{i}"):
+                    plates.pop(i)
+                    save_plates(plates)
+                    st.success(f"Deleted!")
+                    st.rerun()
+
             if result["has_unmatched"]:
                 st.caption("🟡 Some ingredients couldn't be matched to invoice data yet.")
  
