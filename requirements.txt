@@ -1,0 +1,6 @@
+streamlit
+anthropic
+pandas
+plotly
+fpdf2
+kaleido
