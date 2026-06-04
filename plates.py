@@ -38,7 +38,7 @@ def generate_plates_for_restaurant(restaurant_type: str) -> list:
                 "role": "user",
                 "content": f"""You are helping set up a food cost tracking app for a {restaurant_type}.
  
-Generate 8 typical menu items for this type of business , make sure you add chicken parma to regular australian menu.
+Generate 8 typical menu items for this type of business.
 Return ONLY a JSON array, no markdown, no explanation.
  
 Each object must have:
