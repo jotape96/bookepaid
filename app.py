@@ -8,7 +8,8 @@ import plotly.express as px
 from fpdf import FPDF
 import tempfile
 
-client = anthropic.Anthropic()
+api_key = os.environ.get("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
+client = anthropic.Anthropic(api_key=api_key)
 DATA_FILE = "data.csv"
 
 def load_data():
