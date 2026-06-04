@@ -96,7 +96,7 @@ if uploaded_file is not None:
         with st.spinner("Reading invoice..."):
             response = client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=1024,
+                max_tokens=4096,
                 messages=[
                     {
                         "role": "user",
