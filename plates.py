@@ -18,7 +18,10 @@ RESTAURANT_TYPES = [
     "Burger & Grill",
     "Vegan & Healthy Food",
     "Sandwich & Deli",
-    "Ice Cream & Desserts"
+    "Ice Cream & Desserts",
+    "Middle Eastern Restaurant",
+    "Indian Restaurant",
+    "Kebab & Street Food"
 ]
  
  
