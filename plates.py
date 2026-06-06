@@ -98,39 +98,42 @@ def get_latest_prices(df: pd.DataFrame) -> dict:
  
  
 def calculate_plate_cost(plate: dict, prices: dict) -> dict:
-    """Calculate cost of a plate based on latest ingredient prices."""
     total_cost = 0.0
     breakdown = []
- 
+
     for ingredient in plate["ingredients"]:
         key = ingredient["description"].lower().strip()
         qty = ingredient["quantity_kg"]
- 
-        matched_price = None
+
+        # Find all matches
+        matched_candidates = []
         for price_key, price_val in prices.items():
             if key in price_key or price_key in key:
-                matched_price = price_val
-                break
- 
-        if matched_price:
-            cost = matched_price * qty
-            total_cost += cost
+                matched_candidates.append((price_key, price_val))
+
+        if matched_candidates:
+            matched_candidates.sort(key=lambda x: x[1], reverse=True)
             breakdown.append({
                 "ingredient": ingredient["description"],
                 "qty_g": round(qty * 1000, 1),
-                "unit_price": matched_price,
-                "cost": cost,
+                "candidates": matched_candidates,
+                "selected": matched_candidates[0][0],
+                "unit_price": matched_candidates[0][1],
+                "cost": round(matched_candidates[0][1] * qty, 4),
                 "matched": True
             })
+            total_cost += matched_candidates[0][1] * qty
         else:
             breakdown.append({
                 "ingredient": ingredient["description"],
                 "qty_g": round(qty * 1000, 1),
+                "candidates": [],
+                "selected": None,
                 "unit_price": None,
                 "cost": None,
                 "matched": False
             })
- 
+
     return {
         "name": plate["name"],
         "total_cost": total_cost,

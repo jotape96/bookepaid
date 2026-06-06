@@ -183,7 +183,6 @@ elif page == "🍽️ Plate Costing":
 
             st.caption("Edit ingredients and quantities:")
 
-            # Session state key for this plate's ingredient list
             state_key = f"ingredients_{i}"
             if state_key not in st.session_state:
                 st.session_state[state_key] = [
@@ -191,11 +190,12 @@ elif page == "🍽️ Plate Costing":
                     for ing in plate["ingredients"]
                 ]
 
-            updated_ingredients = []
             to_delete = None
+            running_total = 0.0
 
-            for j, ingredient in enumerate(st.session_state[state_key]):
-                col1, col2, col3 = st.columns([4, 2, 1])
+            for j, (ingredient, breakdown_item) in enumerate(zip(st.session_state[state_key], result["breakdown"])):
+                col1, col2, col3, col4, col5 = st.columns([3, 1, 2, 2, 1])
+
                 with col1:
                     new_desc = st.text_input(
                         "Ingredient",
@@ -213,19 +213,43 @@ elif page == "🍽️ Plate Costing":
                         label_visibility="collapsed"
                     )
                 with col3:
-                    if st.button("🗑️", key=f"del_ing_{i}_{j}", help="Remove ingredient"):
+                    if breakdown_item["candidates"]:
+                        options = [c[0] for c in breakdown_item["candidates"]]
+                        selected = st.selectbox(
+                            "Match",
+                            options=options,
+                            key=f"match_{i}_{j}",
+                            label_visibility="collapsed"
+                        )
+                        selected_price = dict(breakdown_item["candidates"])[selected]
+                        cost = round(selected_price * (new_qty / 1000), 4)
+                        running_total += cost
+                    else:
+                        st.caption("⚠️ No match")
+                        selected_price = None
+                        cost = None
+
+                with col4:
+                    if cost is not None:
+                        st.metric("Cost", f"${cost:.4f}", label_visibility="visible")
+                    else:
+                        st.caption("—")
+
+                with col5:
+                    if st.button("🗑️", key=f"del_ing_{i}_{j}"):
                         to_delete = j
-                updated_ingredients.append({
+
+                st.session_state[state_key][j] = {
                     "description": new_desc,
                     "quantity_kg": new_qty / 1000
-                })
+                }
 
-            # Handle ingredient deletion
+            st.markdown(f"**Estimated Plate Cost: ${running_total:.4f}**")
+
             if to_delete is not None:
                 st.session_state[state_key].pop(to_delete)
                 st.rerun()
 
-            # Add ingredient button
             if st.button("➕ Add Ingredient", key=f"add_ing_{i}"):
                 st.session_state[state_key].append({"description": "New Ingredient", "quantity_kg": 0.1})
                 st.rerun()
@@ -234,7 +258,10 @@ elif page == "🍽️ Plate Costing":
             col_save, col_delete = st.columns([1, 1])
             with col_save:
                 if st.button("💾 Save Changes", key=f"save_{i}"):
-                    plates[i]["ingredients"] = updated_ingredients
+                    plates[i]["ingredients"] = [
+                        {"description": ing["description"], "quantity_kg": ing["quantity_kg"]}
+                        for ing in st.session_state[state_key]
+                    ]
                     save_plates(plates)
                     del st.session_state[state_key]
                     st.success("✅ Saved!")
