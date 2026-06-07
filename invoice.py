@@ -4,6 +4,7 @@ import json
 import pandas as pd
 import streamlit as st
 import os
+from data import snapshot_plate_costs
 
 def get_client():
     api_key = os.environ.get("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
@@ -64,3 +65,4 @@ def extract_invoice(pdf_bytes: bytes, invoice_name: str) -> pd.DataFrame:
     df = pd.DataFrame(items)
     df["invoice"] = invoice_name
     return df
+

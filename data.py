@@ -33,3 +33,37 @@ def append_invoice(new_df: pd.DataFrame):
     existing_df = load_data()
     combined = pd.concat([existing_df, new_df], ignore_index=True)
     save_data(combined)
+
+PLATE_HISTORY_FILE = "plate_history.csv"
+
+def load_plate_history() -> pd.DataFrame:
+    if os.path.exists(PLATE_HISTORY_FILE):
+        return pd.read_csv(PLATE_HISTORY_FILE)
+    return pd.DataFrame(columns=["date", "plate", "cost"])
+
+def save_plate_history(df: pd.DataFrame):
+    df.to_csv(PLATE_HISTORY_FILE, index=False)
+
+def snapshot_plate_costs(invoice_date: str):
+    """Recalculate all plate costs and save a snapshot."""
+    from plates import load_plates, get_latest_prices, calculate_plate_cost
+    
+    df = load_data()
+    prices = get_latest_prices(df)
+    plates = load_plates()
+    history = load_plate_history()
+
+    new_rows = []
+    for plate in plates:
+        result = calculate_plate_cost(plate, prices)
+        if result["total_cost"] > 0:
+            new_rows.append({
+                "date": invoice_date,
+                "plate": plate["name"],
+                "cost": round(result["total_cost"], 4)
+            })
+
+    if new_rows:
+        new_df = pd.DataFrame(new_rows)
+        combined = pd.concat([history, new_df], ignore_index=True)
+        save_plate_history(combined)

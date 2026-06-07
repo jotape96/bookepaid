@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
-
+from data import load_plate_history,load_data, is_duplicate, append_invoice, snapshot_plate_costs
 from auth import check_password
-from data import load_data, is_duplicate, append_invoice
 from invoice import extract_invoice
 from pdf_export import generate_pdf
 from plates import (load_plates, save_plates, plates_exist,
@@ -64,6 +63,8 @@ if page == "📥 Invoice Upload":
                     pdf_bytes = uploaded_file.read()
                     new_df = extract_invoice(pdf_bytes, uploaded_file.name)
                     append_invoice(new_df)
+                    invoice_date = new_df["date"].iloc[0] if "date" in new_df.columns else str(pd.Timestamp.now().date())
+                    snapshot_plate_costs(invoice_date)
                     st.success("✅ Invoice processed and saved!")
                     st.dataframe(new_df, use_container_width=True)
                 except ValueError as e:
@@ -127,13 +128,38 @@ elif page == "📊 Dashboard":
                 st.plotly_chart(fig_bar, use_container_width=True)
 
         st.markdown("---")
-        st.subheader("📈 COGS Trend Over Time")
+        st.subheader("📈 Plate Cost Trend")
+
+        history_df = load_plate_history()
+
+        if history_df.empty:
+            st.info("Plate cost history will appear after uploading invoices.")
+        else:
+            plate_names = history_df["plate"].unique().tolist()
+            selected_plate = st.selectbox("Select Menu Item", options=plate_names)
+            
+            filtered = history_df[history_df["plate"] == selected_plate].copy()
+            filtered["date"] = pd.to_datetime(filtered["date"], errors="coerce")
+            filtered = filtered.sort_values("date")
+
+            fig_trend = px.line(
+                filtered,
+                x="date",
+                y="cost",
+                markers=True,
+                labels={"cost": "Plate Cost ($)", "date": "Invoice Date"},
+                title=f"Cost trend — {selected_plate}"
+            )
+            st.plotly_chart(fig_trend, use_container_width=True)
+
+        # Keep raw COGS trend below
+        st.markdown("---")
+        st.subheader("📦 Raw COGS Trend")
         cogs_df = df[df["category"] == "COGS"].copy()
         if not cogs_df.empty and "date" in cogs_df.columns:
             cogs_df["date"] = pd.to_datetime(cogs_df["date"], errors="coerce")
             cogs_trend = cogs_df.groupby("date")["total"].sum().reset_index()
-            cogs_trend = cogs_trend.sort_values("date")
-            fig_trend = px.line(
+            fig_cogs = px.line(
                 cogs_trend,
                 x="date",
                 y="total",
@@ -141,25 +167,9 @@ elif page == "📊 Dashboard":
                 labels={"total": "COGS ($)", "date": "Invoice Date"},
                 title="Total COGS by Invoice Date"
             )
-            st.plotly_chart(fig_trend, use_container_width=True)
+            st.plotly_chart(fig_cogs, use_container_width=True)
         else:
             st.info("COGS trend will appear once invoices with dates are uploaded.")
-
-        st.markdown("---")
-        st.subheader("📒 Accumulated Financial Ledger")
-        st.dataframe(df, use_container_width=True)
-
-        st.markdown("---")
-        st.subheader("📄 Export Report")
-        if st.button("Generate PDF Report"):
-            with st.spinner("Building report..."):
-                pdf_output = generate_pdf(df, fig_pie)
-            st.download_button(
-                label="⬇️ Download PDF",
-                data=pdf_output,
-                file_name=f"bookepaid_report_{pd.Timestamp.now().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf"
-            )
 
 # ─────────────────────────────────────────
 # PAGE 3: PLATE COSTING
