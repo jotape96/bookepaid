@@ -35,7 +35,7 @@ def extract_invoice(pdf_bytes: bytes, invoice_name: str) -> pd.DataFrame:
                         "type": "text",
                         "text": """Extract all line items from this invoice and return ONLY a JSON array.
                         Each object must have:
-                        - description (string)
+                        - description (string): ingredient name ONLY, no quantities or units (e.g. "Ham" not "Ham X 500gr", "Onion" not "Onion 3 Kg")
                         - quantity (number)
                         - unit_price (number)
                         - total (number)

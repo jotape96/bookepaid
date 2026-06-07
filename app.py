@@ -203,8 +203,11 @@ elif page == "🍽️ Plate Costing":
             to_delete = None
             running_total = 0.0
 
-            for j, (ingredient, breakdown_item) in enumerate(zip(st.session_state[state_key], result["breakdown"])):
-                col1, col2, col3, col4, col5 = st.columns([3, 1, 2, 2, 1])
+            for j, ingredient in enumerate(st.session_state[state_key]):
+                key = ingredient["description"].lower().strip()
+                candidates = [(pk, pv) for pk, pv in prices.items()
+                             if key in pk or pk in key]
+                candidates.sort(key=lambda x: x[1], reverse=True)
 
                 with col1:
                     new_desc = st.text_input(
@@ -223,20 +226,19 @@ elif page == "🍽️ Plate Costing":
                         label_visibility="collapsed"
                     )
                 with col3:
-                    if breakdown_item["candidates"]:
-                        options = [c[0] for c in breakdown_item["candidates"]]
+                    if candidates:
+                        options = [c[0] for c in candidates]
                         selected = st.selectbox(
                             "Match",
                             options=options,
                             key=f"match_{i}_{j}",
                             label_visibility="collapsed"
                         )
-                        selected_price = dict(breakdown_item["candidates"])[selected]
+                        selected_price = dict(candidates)[selected]
                         cost = round(selected_price * (new_qty / 1000), 4)
                         running_total += cost
                     else:
                         st.caption("⚠️ No match")
-                        selected_price = None
                         cost = None
 
                 with col4:
