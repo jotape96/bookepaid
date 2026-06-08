@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import hashlib
+from plates import load_plates, get_latest_prices, calculate_plate_cost
 
 DATA_FILE = "data.csv"
 
@@ -48,8 +49,6 @@ def save_plate_history(df: pd.DataFrame):
     df.to_csv(PLATE_HISTORY_FILE, index=False)
 
 def snapshot_plate_costs(invoice_date: str):
-    """Recalculate all plate costs and save a snapshot."""
-    from plates import load_plates, get_latest_prices, calculate_plate_cost
     
     df = load_data()
     prices = get_latest_prices(df)
@@ -66,7 +65,7 @@ def snapshot_plate_costs(invoice_date: str):
                 "cost": round(result["total_cost"], 4)
             })
 
-    if new_rows:
+    if result["total_cost"] > 0 and not result["has_unmatched"]:
         new_df = pd.DataFrame(new_rows)
         combined = pd.concat([history, new_df], ignore_index=True)
         save_plate_history(combined)
