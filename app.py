@@ -42,7 +42,7 @@ if not plates_exist():
 # ─────────────────────────────────────────
 # NAVIGATION
 # ─────────────────────────────────────────
-st.sidebar.title("BookePaid 💜💙")
+st.sidebar.title("BookepAId 💜💙")
 page = st.sidebar.radio("Navigate", ["📥 Invoice Upload", "📊 Dashboard", "🍽️ Plate Costing"])
 
 # ─────────────────────────────────────────
