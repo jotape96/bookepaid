@@ -208,6 +208,8 @@ elif page == "🍽️ Plate Costing":
                 candidates = [(pk, pv) for pk, pv in prices.items()
                              if key in pk or pk in key]
                 candidates.sort(key=lambda x: x[1], reverse=True)
+                
+                col1, col2, col3, col4, col5 = st.columns([3, 1, 2, 2, 1])
 
                 with col1:
                     new_desc = st.text_input(
