@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
-from data import load_plate_history,load_data, is_duplicate, append_invoice, snapshot_plate_costs
+from data import (load_data, is_duplicate, 
+                  append_invoice, snapshot_plate_costs, 
+                  is_duplicate_content, register_hash)
 from auth import check_password
 from invoice import extract_invoice
 from pdf_export import generate_pdf
@@ -48,21 +50,16 @@ page = st.sidebar.radio("Navigate", ["📥 Invoice Upload", "📊 Dashboard", "�
 # ─────────────────────────────────────────
 # PAGE 1: INVOICE UPLOAD
 # ─────────────────────────────────────────
-if page == "📥 Invoice Upload":
-    st.title("📥 Invoice Upload")
-    st.write("Upload a supplier invoice PDF and BookePaid will extract and categorise every line item automatically.")
-
-    uploaded_file = st.file_uploader("Upload Invoice (PDF)", type=["pdf"])
-
-    if uploaded_file is not None:
-        if is_duplicate(uploaded_file.name):
-            st.warning(f"⚠️ {uploaded_file.name} has already been processed.")
+if uploaded_file is not None:
+        pdf_bytes = uploaded_file.read()
+        if is_duplicate(uploaded_file.name) or is_duplicate_content(pdf_bytes):
+            st.warning(f"⚠️ This invoice has already been processed.")
         else:
             with st.spinner("Reading invoice with AI..."):
                 try:
-                    pdf_bytes = uploaded_file.read()
                     new_df = extract_invoice(pdf_bytes, uploaded_file.name)
                     append_invoice(new_df)
+                    register_hash(pdf_bytes)
                     invoice_date = new_df["date"].iloc[0] if "date" in new_df.columns else str(pd.Timestamp.now().date())
                     snapshot_plate_costs(invoice_date)
                     st.success("✅ Invoice processed and saved!")
