@@ -1,9 +1,12 @@
 import pandas as pd
 import os
+import hashlib
 
 DATA_FILE = "data.csv"
 
 COLUMNS = ["invoice", "date", "description", "quantity", "unit_price", "total", "category"]
+
+HASH_FILE = "invoice_hashes.txt"
 
 
 def load_data() -> pd.DataFrame:
@@ -67,3 +70,22 @@ def snapshot_plate_costs(invoice_date: str):
         new_df = pd.DataFrame(new_rows)
         combined = pd.concat([history, new_df], ignore_index=True)
         save_plate_history(combined)
+
+
+def load_hashes() -> set:
+    if os.path.exists(HASH_FILE):
+        with open(HASH_FILE, "r") as f:
+            return set(line.strip() for line in f.readlines())
+    return set()
+
+def save_hash(file_hash: str):
+    with open(HASH_FILE, "a") as f:
+        f.write(file_hash + "\n")
+
+def is_duplicate_content(pdf_bytes: bytes) -> bool:
+    file_hash = hashlib.md5(pdf_bytes).hexdigest()
+    return file_hash in load_hashes()
+
+def register_hash(pdf_bytes: bytes):
+    file_hash = hashlib.md5(pdf_bytes).hexdigest()
+    save_hash(file_hash)
