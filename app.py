@@ -17,7 +17,7 @@ from plates import (load_plates, save_plates, plates_exist,
 check_password()
 
 # --- CONFIG ---
-st.set_page_config(page_title="BookePAId", page_icon="💜", layout="wide")
+st.set_page_config(page_title="BookepAId", page_icon="💜", layout="wide")
 
 # ─────────────────────────────────────────
 # ONBOARDING
