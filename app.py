@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
-from data import (load_data, is_duplicate, 
-                  append_invoice, snapshot_plate_costs, 
-                  is_duplicate_content, register_hash,
+from data import (load_data, is_duplicate_invoice,
+                  append_invoice, snapshot_plate_costs,
                   load_plate_history)
 from auth import check_password
 from invoice import extract_invoice
@@ -58,21 +57,44 @@ if page == "📥 Invoice Upload":
     uploaded_file = st.file_uploader("Upload Invoice (PDF)", type=["pdf"])
 
     if uploaded_file is not None:
-        pdf_bytes = uploaded_file.read()
-        if is_duplicate(uploaded_file.name) or is_duplicate_content(pdf_bytes):
-            st.warning("⚠️ This invoice has already been processed.")
-        else:
-            with st.spinner("Reading invoice with AI..."):
-                try:
-                    new_df = extract_invoice(pdf_bytes, uploaded_file.name)
-                    append_invoice(new_df)
-                    register_hash(pdf_bytes)
-                    invoice_date = new_df["date"].iloc[0] if "date" in new_df.columns else str(pd.Timestamp.now().date())
-                    snapshot_plate_costs(invoice_date)
-                    st.success("✅ Invoice processed and saved!")
+        file_bytes = uploaded_file.read()
+
+        with st.spinner("Reading invoice with AI..."):
+            try:
+                file_type = uploaded_file.type
+                if file_type == "application/pdf":
+                    new_df = extract_invoice(file_bytes, uploaded_file.name)
+                else:
+                    new_df = extract_invoice_image(file_bytes, file_type, uploaded_file.name)
+
+                invoice_number = new_df["invoice_number"].iloc[0] if "invoice_number" in new_df.columns else "UNKNOWN"
+                supplier = new_df["supplier"].iloc[0] if "supplier" in new_df.columns else "UNKNOWN"
+
+                if is_duplicate_invoice(invoice_number, supplier):
+                    st.warning(f"⚠️ Invoice {invoice_number} from {supplier} has already been processed.")
+                    existing = load_data()
+                    prev = existing[existing["invoice_number"] == invoice_number]
+                    if not prev.empty:
+                        st.caption("Previous extraction:")
+                        st.dataframe(prev, use_container_width=True)
+                    if st.button("🔄 Reprocess anyway"):
+                        st.session_state["force_reprocess"] = invoice_number
+                
+                if not is_duplicate_invoice(invoice_number, supplier) or \
+                   st.session_state.get("force_reprocess") == invoice_number:
+                    st.success("✅ Extracted — please review before saving:")
                     st.dataframe(new_df, use_container_width=True)
-                except ValueError as e:
-                    st.error(f"Could not process invoice: {e}")
+
+                    if st.button("💾 Confirm and Save"):
+                        append_invoice(new_df)
+                        invoice_date = new_df["date"].iloc[0] if "date" in new_df.columns else str(pd.Timestamp.now().date())
+                        snapshot_plate_costs(invoice_date)
+                        st.session_state.pop("force_reprocess", None)
+                        st.success("✅ Invoice saved!")
+                        st.rerun()
+
+            except ValueError as e:
+                st.error(f"Could not process invoice: {e}")
 # ─────────────────────────────────────────
 # PAGE 2: DASHBOARD
 # ─────────────────────────────────────────

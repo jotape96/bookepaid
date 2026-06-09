@@ -38,7 +38,7 @@ def append_invoice(new_df: pd.DataFrame):
     combined["date"] = pd.to_datetime(combined["date"], errors="coerce")
     combined = combined.sort_values("date").reset_index(drop=True)
     save_data(combined)
-    
+
 PLATE_HISTORY_FILE = "plate_history.csv"
 
 def load_plate_history() -> pd.DataFrame:
@@ -77,20 +77,15 @@ def snapshot_plate_costs(invoice_date: str):
         save_plate_history(combined)
 
 
-def load_hashes() -> set:
-    if os.path.exists(HASH_FILE):
-        with open(HASH_FILE, "r") as f:
-            return set(line.strip() for line in f.readlines())
-    return set()
-
-def save_hash(file_hash: str):
-    with open(HASH_FILE, "a") as f:
-        f.write(file_hash + "\n")
-
-def is_duplicate_content(pdf_bytes: bytes) -> bool:
-    file_hash = hashlib.md5(pdf_bytes).hexdigest()
-    return file_hash in load_hashes()
-
-def register_hash(pdf_bytes: bytes):
-    file_hash = hashlib.md5(pdf_bytes).hexdigest()
-    save_hash(file_hash)
+def is_duplicate_invoice(invoice_number: str, supplier: str) -> bool:
+    """Check if invoice number + supplier combo already exists."""
+    if invoice_number == "UNKNOWN" or supplier == "UNKNOWN":
+        return False  # can't reliably check, let it through
+    df = load_data()
+    if "invoice_number" not in df.columns:
+        return False
+    match = df[
+        (df["invoice_number"].str.upper() == invoice_number.upper()) &
+        (df["supplier"].str.upper() == supplier.upper())
+    ]
+    return not match.empty

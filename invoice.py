@@ -37,6 +37,8 @@ def extract_invoice(pdf_bytes: bytes, invoice_name: str) -> pd.DataFrame:
                         Each object must have:
                         - description (string): ingredient name ONLY, no quantities or units.
                         Examples: "Onion 3 Kg" → "Onion", "Eggs x 30" → "Eggs", "Ham 500gr" → "Ham"
+                        - invoice_number (string): invoice number or reference found on the document, "UNKNOWN" if not found
+                        - supplier (string): supplier or vendor business name, "UNKNOWN" if not found
                         - quantity (number): numeric quantity ordered
                         - unit (string): unit of measurement after normalisation:
                         * For weight items: always normalise to "kg"
