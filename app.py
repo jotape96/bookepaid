@@ -138,7 +138,7 @@ elif page == "📊 Dashboard":
             st.plotly_chart(fig_pie, use_container_width=True)
 
         with chart_col2:
-            st.subheader("Granular Item Breakdown")
+            st.subheader("Item Breakdown")
             if existing_categories:
                 selected_category = st.selectbox("Filter Cost Center", options=existing_categories)
                 filtered_df = df[df["category"] == selected_category]
