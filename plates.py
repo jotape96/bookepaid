@@ -88,10 +88,12 @@ def plates_exist() -> bool:
  
  
 def get_latest_prices(df: pd.DataFrame) -> dict:
-    """Extract latest unit price per ingredient from invoice data."""
     if df.empty:
         return {}
     cogs_df = df[df["category"] == "COGS"].copy()
+    if cogs_df.empty:
+        return {}
+    cogs_df["description_lower"] = cogs_df["description"].str.lower().str.strip()
     cogs_df["date"] = pd.to_datetime(cogs_df["date"], errors="coerce")
     latest = cogs_df.sort_values("date").groupby("description_lower")["unit_price"].last()
     return latest.to_dict()
