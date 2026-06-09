@@ -4,7 +4,8 @@ import plotly.express as px
 import os
 from data import (load_data, is_duplicate, 
                   append_invoice, snapshot_plate_costs, 
-                  is_duplicate_content, register_hash)
+                  is_duplicate_content, register_hash,
+                  load_plate_history)
 from auth import check_password
 from invoice import extract_invoice
 from pdf_export import generate_pdf
