@@ -22,7 +22,7 @@ st.set_page_config(page_title="BookePaid", page_icon="💜", layout="wide")
 # ONBOARDING
 # ─────────────────────────────────────────
 if not plates_exist():
-    st.title("Welcome to BookePaid 💜💙")
+    st.title("Welcome to BookepAId 💜💙")
     st.subheader("Let's set up your menu")
     st.write("Tell us what kind of business you run and we'll generate a starter set of menu items automatically.")
 
@@ -50,10 +50,16 @@ page = st.sidebar.radio("Navigate", ["📥 Invoice Upload", "📊 Dashboard", "�
 # ─────────────────────────────────────────
 # PAGE 1: INVOICE UPLOAD
 # ─────────────────────────────────────────
-if uploaded_file is not None:
+if page == "📥 Invoice Upload":
+    st.title("📥 Invoice Upload")
+    st.write("Upload a supplier invoice PDF and BookePaid will extract and categorise every line item automatically.")
+
+    uploaded_file = st.file_uploader("Upload Invoice (PDF)", type=["pdf"])
+
+    if uploaded_file is not None:
         pdf_bytes = uploaded_file.read()
         if is_duplicate(uploaded_file.name) or is_duplicate_content(pdf_bytes):
-            st.warning(f"⚠️ This invoice has already been processed.")
+            st.warning("⚠️ This invoice has already been processed.")
         else:
             with st.spinner("Reading invoice with AI..."):
                 try:
@@ -66,7 +72,6 @@ if uploaded_file is not None:
                     st.dataframe(new_df, use_container_width=True)
                 except ValueError as e:
                     st.error(f"Could not process invoice: {e}")
-
 # ─────────────────────────────────────────
 # PAGE 2: DASHBOARD
 # ─────────────────────────────────────────
@@ -167,6 +172,51 @@ elif page == "📊 Dashboard":
             st.plotly_chart(fig_cogs, use_container_width=True)
         else:
             st.info("COGS trend will appear once invoices with dates are uploaded.")
+
+        st.markdown("---")
+        st.subheader("📁 Export for Accountant")
+        
+        col_from, col_to = st.columns(2)
+        with col_from:
+            date_from = st.date_input("From", value=pd.Timestamp.now().date().replace(month=1, day=1))
+        with col_to:
+            date_to = st.date_input("To", value=pd.Timestamp.now().date())
+
+        gst_rate = st.number_input("GST Rate (%)", value=10.0, step=0.5) / 100
+
+        filtered_export = df.copy()
+        filtered_export["date"] = pd.to_datetime(filtered_export["date"], errors="coerce")
+        filtered_export = filtered_export[
+            (filtered_export["date"] >= pd.Timestamp(date_from)) &
+            (filtered_export["date"] <= pd.Timestamp(date_to))
+        ]
+
+        # Add GST columns
+        filtered_export["gst_amount"] = (filtered_export["total"] * gst_rate / (1 + gst_rate)).round(2)
+        filtered_export["total_ex_gst"] = (filtered_export["total"] - filtered_export["gst_amount"]).round(2)
+        filtered_export["total_inc_gst"] = filtered_export["total"].round(2)
+
+        # Reorder columns for accountant
+        export_columns = ["date", "invoice", "description", "quantity", "unit_price", 
+                         "total_ex_gst", "gst_amount", "total_inc_gst", "category"]
+        export_columns = [c for c in export_columns if c in filtered_export.columns]
+        filtered_export = filtered_export[export_columns]
+
+        st.caption(f"{len(filtered_export)} line items in selected range")
+        
+        # Summary totals
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Ex GST", f"${filtered_export['total_ex_gst'].sum():.2f}")
+        col2.metric("GST Amount", f"${filtered_export['gst_amount'].sum():.2f}")
+        col3.metric("Total Inc GST", f"${filtered_export['total_inc_gst'].sum():.2f}")
+
+        csv = filtered_export.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="⬇️ Download CSV",
+            data=csv,
+            file_name=f"bookepaid_export_{date_from}_{date_to}.csv",
+            mime="text/csv"
+        )
 
 # ─────────────────────────────────────────
 # PAGE 3: PLATE COSTING

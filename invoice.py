@@ -4,7 +4,7 @@ import json
 import pandas as pd
 import streamlit as st
 import os
-from data import snapshot_plate_costs
+
 
 def get_client():
     api_key = os.environ.get("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")

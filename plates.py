@@ -92,8 +92,8 @@ def get_latest_prices(df: pd.DataFrame) -> dict:
     if df.empty:
         return {}
     cogs_df = df[df["category"] == "COGS"].copy()
-    cogs_df["description_lower"] = cogs_df["description"].str.lower().str.strip()
-    latest = cogs_df.sort_values("invoice").groupby("description_lower")["unit_price"].last()
+    cogs_df["date"] = pd.to_datetime(cogs_df["date"], errors="coerce")
+    latest = cogs_df.sort_values("date").groupby("description_lower")["unit_price"].last()
     return latest.to_dict()
  
  

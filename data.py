@@ -33,11 +33,12 @@ def is_duplicate(invoice_name: str) -> bool:
 
 
 def append_invoice(new_df: pd.DataFrame):
-    """Append new invoice rows to existing data and save."""
     existing_df = load_data()
     combined = pd.concat([existing_df, new_df], ignore_index=True)
+    combined["date"] = pd.to_datetime(combined["date"], errors="coerce")
+    combined = combined.sort_values("date").reset_index(drop=True)
     save_data(combined)
-
+    
 PLATE_HISTORY_FILE = "plate_history.csv"
 
 def load_plate_history() -> pd.DataFrame:
@@ -64,6 +65,11 @@ def snapshot_plate_costs(invoice_date: str):
                 "plate": plate["name"],
                 "cost": round(result["total_cost"], 4)
             })
+
+    if new_rows: # If we have any valid plate snapshots, save them
+        new_df = pd.DataFrame(new_rows)
+        combined = pd.concat([history, new_df], ignore_index=True)
+        save_plate_history(combined)
 
     if result["total_cost"] > 0 and not result["has_unmatched"]:
         new_df = pd.DataFrame(new_rows)
