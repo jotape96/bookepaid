@@ -6,7 +6,7 @@ def check_password():
         st.session_state.authenticated = False
 
     if not st.session_state.authenticated:
-        st.title("BookeoAId 💜💙")
+        st.title("BookepAId 💜💙")
         st.subheader("Welcome — please enter your access code")
         password = st.text_input("Access code", type="password")
         if st.button("Login"):
