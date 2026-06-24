@@ -357,6 +357,17 @@ elif page == "🍽️ Plate Costing":
                 selling_price = plate.get("selling_price", 0)
 
             st.caption("Edit ingredients and quantities:")
+            h1, h2, h3, h4, h5 = st.columns([3, 1, 2, 2, 1])
+            with h1:
+                st.caption("**Ingredient**")
+            with h2:
+                st.caption("**Grams**")
+            with h3:
+                st.caption("**Invoice Match**")
+            with h4:
+                st.caption("**Cost**")
+            with h5:
+                st.caption("")
             state_key = f"ingredients_{i}"
             if state_key not in st.session_state:
                 st.session_state[state_key] = [

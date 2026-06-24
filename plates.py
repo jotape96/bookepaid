@@ -226,6 +226,7 @@ For each item generate typical ingredients needed to make it.
 Return ONLY a JSON array, no markdown, no explanation.
 Each object must have:
 - name (string): the exact menu item name as shown
+- selling_price (number): the price shown on the menu in numeric form, 0 if not found
 - ingredients (array): list of ingredient objects, each with:
   - description (string): ingredient name as it would appear on a supplier invoice
   - quantity_kg (number): typical quantity in kg used per serving be as realistic as possible (e.g. 0.15 for 150g)
