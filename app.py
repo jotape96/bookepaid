@@ -10,7 +10,8 @@ from invoice import extract_invoice, extract_invoice_image
 from pdf_export import generate_pdf
 from plates import (load_plates, save_plate, update_plate, delete_plate,
                     plates_exist, get_latest_prices, calculate_plate_cost,
-                    generate_plates_for_restaurant, RESTAURANT_TYPES)
+                    generate_plates_for_restaurant, extract_plates_from_menu,
+                    RESTAURANT_TYPES)
 
 # --- AUTH ---
 user = check_auth()
@@ -24,26 +25,46 @@ business_id = user.business_id
 # ONBOARDING — runs once if no plates exist
 # ─────────────────────────────────────────
 if not plates_exist(business_id):
-    st.title("Welcome to BookepAId 💜💙")
+    st.title("Welcome to BookePaid 💜💙")
     st.subheader("Let's set up your menu")
     st.write("Tell us what kind of business you run and we'll generate starter menu items automatically.")
 
-    restaurant_type = st.selectbox("What type of restaurant or café are you?", options=RESTAURANT_TYPES)
+    tab1, tab2 = st.tabs(["📷 Upload your menu", "🍽️ Choose restaurant type"])
 
-    if st.button("Generate My Menu Templates ✨"):
-        with st.spinner(f"Generating menu items for {restaurant_type}..."):
-            try:
-                plates = generate_plates_for_restaurant(restaurant_type)
-                for plate in plates:
-                    save_plate(plate, business_id)
-                st.success(f"✅ Generated {len(plates)} menu items!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Something went wrong: {e}")
+    with tab1:
+        st.write("Take a photo of your menu and we'll extract your dishes automatically.")
+        menu_file = st.file_uploader("Upload menu photo", type=["jpg", "jpeg", "png", "pdf"])
+
+        if menu_file is not None:
+            if st.button("Generate from Menu ✨"):
+                with st.spinner("Reading your menu..."):
+                    try:
+                        file_bytes = menu_file.read()
+                        plates = extract_plates_from_menu(file_bytes, menu_file.type)
+                        for plate in plates:
+                            save_plate(plate, business_id)
+                        st.success(f"✅ Found {len(plates)} menu items!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Something went wrong: {e}")
+
+    with tab2:
+        st.write("Tell us what kind of business you run and we'll generate typical menu items.")
+        restaurant_type = st.selectbox("What type of restaurant or café are you?", options=RESTAURANT_TYPES)
+
+        if st.button("Generate My Menu Templates ✨"):
+            with st.spinner(f"Generating menu items for {restaurant_type}..."):
+                try:
+                    plates = generate_plates_for_restaurant(restaurant_type)
+                    for plate in plates:
+                        save_plate(plate, business_id)
+                    st.success(f"✅ Generated {len(plates)} menu items!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Something went wrong: {e}")
 
     st.caption("You can edit, delete, or add your own items after setup.")
     st.stop()
-
 # ─────────────────────────────────────────
 # NAVIGATION
 # ─────────────────────────────────────────

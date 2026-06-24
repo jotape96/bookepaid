@@ -4,6 +4,7 @@ import anthropic
 import streamlit as st
 import os
 from database import get_client
+import base64
 
 RESTAURANT_TYPES = [
     "Specialty Coffee Shop",
@@ -190,3 +191,54 @@ def calculate_plate_cost(plate: dict, prices: dict) -> dict:
         "breakdown": breakdown,
         "has_unmatched": any(not b["matched"] for b in breakdown)
     }
+def extract_plates_from_menu(file_bytes: bytes, file_type: str) -> list:
+    """Read a menu photo or PDF and extract dishes with typical ingredients."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
+    client = anthropic.Anthropic(api_key=api_key)
+
+    if file_type == "application/pdf":
+        content = [
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": base64.b64encode(file_bytes).decode("utf-8")
+                }
+            }
+        ]
+    else:
+        content = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": file_type,
+                    "data": base64.b64encode(file_bytes).decode("utf-8")
+                }
+            }
+        ]
+
+    content.append({
+        "type": "text",
+        "text": """This is a restaurant or café menu. Extract all food and drink items.
+For each item generate typical ingredients needed to make it.
+Return ONLY a JSON array, no markdown, no explanation.
+Each object must have:
+- name (string): the exact menu item name as shown
+- ingredients (array): list of ingredient objects, each with:
+  - description (string): ingredient name as it would appear on a supplier invoice
+  - quantity_kg (number): typical quantity in kg used per serving be as realistic as possible (e.g. 0.15 for 150g)
+Only include food and drink items, skip descriptions, prices, and categories.
+Only return the JSON array."""
+    })
+
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=4096,
+        messages=[{"role": "user", "content": content}]
+    )
+
+    raw = response.content[0].text
+    raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    return json.loads(raw)
