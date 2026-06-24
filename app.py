@@ -5,7 +5,6 @@ import os
 from data import (load_data, is_duplicate_invoice,
                   append_invoice, snapshot_plate_costs,
                   load_plate_history)
-from auth import check_password
 from invoice import extract_invoice
 from pdf_export import generate_pdf
 from plates import (load_plates, save_plates, plates_exist,
