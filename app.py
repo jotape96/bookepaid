@@ -11,9 +11,10 @@ from pdf_export import generate_pdf
 from plates import (load_plates, save_plates, plates_exist,
                     get_latest_prices, calculate_plate_cost,
                     generate_plates_for_restaurant, RESTAURANT_TYPES)
+from auth import check_auth
 
 # --- AUTH ---
-check_password()
+user = check_auth()
 
 # --- CONFIG ---
 st.set_page_config(page_title="BookepAId", page_icon="💜", layout="wide")
