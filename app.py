@@ -166,6 +166,7 @@ elif page == "📊 Dashboard":
         if history_df.empty:
             st.info("Plate cost history will appear after uploading invoices.")
         else:
+            plates = load_plates(business_id)
             plate_names = history_df["plate_name"].unique().tolist()
             selected_plate = st.selectbox("Select Menu Item", options=plate_names)
             filtered = history_df[history_df["plate_name"] == selected_plate].copy()
@@ -176,8 +177,27 @@ elif page == "📊 Dashboard":
                 y="cost",
                 markers=True,
                 labels={"cost": "Plate Cost ($)", "date": "Invoice Date"},
-                title=f"Cost trend — {selected_plate}"
+                title=f"Cost vs Selling Price  — {selected_plate}"
             )
+            if user.role == "owner":
+                plate_data = next((p for p in plates if p["name"] == selected_plate), None)
+                if plate_data and plate_data.get("selling_price", 0) > 0:
+                    selling_price = plate_data["selling_price"]
+                    fig_trend.add_hline(
+                        y=selling_price,
+                        line_dash="dash",
+                        line_color="green",
+                        annotation_text=f"Selling Price ${selling_price:.2f}",
+                        annotation_position="top right"
+                    )
+                    # Add margin zone shading
+                    fig_trend.add_hrect(
+                        y0=filtered["cost"].max(),
+                        y1=selling_price,
+                        fillcolor="green",
+                        opacity=0.05,
+                        line_width=0
+                    )
             st.plotly_chart(fig_trend, use_container_width=True)
 
         # Raw COGS Trend
