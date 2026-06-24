@@ -313,7 +313,15 @@ elif page == "🍽️ Plate Costing":
     st.subheader("Menu Item Cost Tracker")
     for i, plate in enumerate(plates):
         result = calculate_plate_cost(plate, prices)
-        with st.expander(f"{'🟢' if not result['has_unmatched'] else '🟡'} {plate['name']} — ${result['total_cost']:.2f}"):
+        open_key = f"open_{i}"
+        if open_key not in st.session_state:
+            st.session_state[open_key] = False
+
+        with st.expander(
+            f"{'🟢' if not result['has_unmatched'] else '🟡'} {plate['name']} — ${result['total_cost']:.2f}",
+            expanded=st.session_state[open_key]
+        ):
+            st.session_state[open_key] = True
 
             # Selling price — owner only
             if user.role == "owner":
@@ -391,19 +399,15 @@ elif page == "🍽️ Plate Costing":
             col_save, col_delete = st.columns([1, 1])
             with col_save:
                 if st.button("💾 Save Changes", key=f"save_{i}"):
-                    update_plate(
-                        plate["id"],
-                        plate["name"],
-                        selling_price if user.role == "owner" else plate.get("selling_price", 0),
-                        st.session_state[state_key],
-                        business_id
-                    )
+                    update_plate(...)
                     del st.session_state[state_key]
+                    st.session_state[open_key] = False
                     st.success("✅ Saved!")
                     st.rerun()
             with col_delete:
                 if st.button("🗑️ Delete Plate", key=f"delete_{i}"):
                     delete_plate(plate["id"], business_id)
+                    st.session_state[open_key] = False
                     st.success("Deleted!")
                     st.rerun()
 
