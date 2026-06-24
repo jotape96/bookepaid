@@ -2,15 +2,15 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
-from data import (load_data, is_duplicate_invoice,
-                  append_invoice, snapshot_plate_costs,
-                  load_plate_history)
-from invoice import extract_invoice
-from pdf_export import generate_pdf
-from plates import (load_plates, save_plates, plates_exist,
-                    get_latest_prices, calculate_plate_cost,
-                    generate_plates_for_restaurant, RESTAURANT_TYPES)
+
 from auth import check_auth
+from data import (load_data, is_duplicate_invoice, save_invoice,
+                  save_line_items, snapshot_plate_costs, load_plate_history)
+from invoice import extract_invoice, extract_invoice_image
+from pdf_export import generate_pdf
+from plates import (load_plates, save_plate, update_plate, delete_plate,
+                    plates_exist, get_latest_prices, calculate_plate_cost,
+                    generate_plates_for_restaurant, RESTAURANT_TYPES)
 
 # --- AUTH ---
 user = check_auth()
@@ -18,13 +18,15 @@ user = check_auth()
 # --- CONFIG ---
 st.set_page_config(page_title="BookepAId", page_icon="💜", layout="wide")
 
+business_id = user.business_id
+
 # ─────────────────────────────────────────
-# ONBOARDING
+# ONBOARDING — runs once if no plates exist
 # ─────────────────────────────────────────
-if not plates_exist():
+if not plates_exist(business_id):
     st.title("Welcome to BookepAId 💜💙")
     st.subheader("Let's set up your menu")
-    st.write("Tell us what kind of business you run and we'll generate a starter set of menu items automatically.")
+    st.write("Tell us what kind of business you run and we'll generate starter menu items automatically.")
 
     restaurant_type = st.selectbox("What type of restaurant or café are you?", options=RESTAURANT_TYPES)
 
@@ -32,7 +34,8 @@ if not plates_exist():
         with st.spinner(f"Generating menu items for {restaurant_type}..."):
             try:
                 plates = generate_plates_for_restaurant(restaurant_type)
-                save_plates(plates)
+                for plate in plates:
+                    save_plate(plate, business_id)
                 st.success(f"✅ Generated {len(plates)} menu items!")
                 st.rerun()
             except Exception as e:
@@ -45,16 +48,21 @@ if not plates_exist():
 # NAVIGATION
 # ─────────────────────────────────────────
 st.sidebar.title("BookepAId 💜💙")
+st.sidebar.caption(f"👤 {user.name} — {user.role.capitalize()}")
 page = st.sidebar.radio("Navigate", ["📥 Invoice Upload", "📊 Dashboard", "🍽️ Plate Costing"])
+
+if st.sidebar.button("🚪 Logout"):
+    user.logout()
+    st.rerun()
 
 # ─────────────────────────────────────────
 # PAGE 1: INVOICE UPLOAD
 # ─────────────────────────────────────────
 if page == "📥 Invoice Upload":
     st.title("📥 Invoice Upload")
-    st.write("Upload a supplier invoice PDF and BookePaid will extract and categorise every line item automatically.")
+    st.write("Upload a supplier invoice — PDF or photo.")
 
-    uploaded_file = st.file_uploader("Upload Invoice (PDF)", type=["pdf"])
+    uploaded_file = st.file_uploader("Upload Invoice", type=["pdf", "jpg", "jpeg", "png"])
 
     if uploaded_file is not None:
         file_bytes = uploaded_file.read()
@@ -69,39 +77,38 @@ if page == "📥 Invoice Upload":
 
                 invoice_number = new_df["invoice_number"].iloc[0] if "invoice_number" in new_df.columns else "UNKNOWN"
                 supplier = new_df["supplier"].iloc[0] if "supplier" in new_df.columns else "UNKNOWN"
+                date = new_df["date"].iloc[0] if "date" in new_df.columns else str(pd.Timestamp.now().date())
 
-                if is_duplicate_invoice(invoice_number, supplier):
+                if is_duplicate_invoice(invoice_number, supplier, business_id):
                     st.warning(f"⚠️ Invoice {invoice_number} from {supplier} has already been processed.")
-                    existing = load_data()
-                    prev = existing[existing["invoice_number"] == invoice_number]
-                    if not prev.empty:
-                        st.caption("Previous extraction:")
-                        st.dataframe(prev, use_container_width=True)
                     if st.button("🔄 Reprocess anyway"):
                         st.session_state["force_reprocess"] = invoice_number
-                
-                if not is_duplicate_invoice(invoice_number, supplier) or \
-                   st.session_state.get("force_reprocess") == invoice_number:
+                else:
+                    st.session_state["force_reprocess"] = invoice_number
+
+                if st.session_state.get("force_reprocess") == invoice_number:
                     st.success("✅ Extracted — please review before saving:")
                     st.dataframe(new_df, use_container_width=True)
 
                     if st.button("💾 Confirm and Save"):
-                        append_invoice(new_df)
-                        invoice_date = new_df["date"].iloc[0] if "date" in new_df.columns else str(pd.Timestamp.now().date())
-                        snapshot_plate_costs(invoice_date)
+                        invoice_id = save_invoice(invoice_number, supplier, str(date)[:10],
+                                                  uploaded_file.name, business_id)
+                        save_line_items(new_df, invoice_id, business_id)
+                        snapshot_plate_costs(str(date)[:10], business_id)
                         st.session_state.pop("force_reprocess", None)
                         st.success("✅ Invoice saved!")
                         st.rerun()
 
             except ValueError as e:
                 st.error(f"Could not process invoice: {e}")
+
 # ─────────────────────────────────────────
 # PAGE 2: DASHBOARD
 # ─────────────────────────────────────────
 elif page == "📊 Dashboard":
     st.title("📊 Dashboard")
 
-    df = load_data()
+    df = load_data(business_id)
 
     if df.empty:
         st.info("💡 Upload your first invoice to see the dashboard.")
@@ -109,8 +116,8 @@ elif page == "📊 Dashboard":
         st.subheader("📈 Executive Summary")
         col1, col2, col3 = st.columns(3)
         col1.metric("Total Documented Spend", f"${df['total'].sum():.2f}")
-        col2.metric("Unique Vendors / Invoices", df["invoice"].nunique())
-        col3.metric("Total Line Items Audited", len(df))
+        col2.metric("Unique Invoices", df["invoice_id"].nunique() if "invoice_id" in df.columns else "—")
+        col3.metric("Total Line Items", len(df))
 
         categories = ["COGS", "Packaging", "Labour", "Overhead", "Other"]
         existing_categories = [c for c in categories if c in df["category"].values]
@@ -138,7 +145,7 @@ elif page == "📊 Dashboard":
             st.plotly_chart(fig_pie, use_container_width=True)
 
         with chart_col2:
-            st.subheader("Item Breakdown")
+            st.subheader("Granular Item Breakdown")
             if existing_categories:
                 selected_category = st.selectbox("Filter Cost Center", options=existing_categories)
                 filtered_df = df[df["category"] == selected_category]
@@ -146,27 +153,23 @@ elif page == "📊 Dashboard":
                     filtered_df,
                     x="description",
                     y="total",
-                    color="invoice",
                     labels={"total": "Amount ($)", "description": "Line Item"},
                     title=f"Distribution inside: {selected_category}"
                 )
                 st.plotly_chart(fig_bar, use_container_width=True)
 
+        # Plate Cost Trend
         st.markdown("---")
         st.subheader("📈 Plate Cost Trend")
-
-        history_df = load_plate_history()
+        history_df = load_plate_history(business_id)
 
         if history_df.empty:
             st.info("Plate cost history will appear after uploading invoices.")
         else:
-            plate_names = history_df["plate"].unique().tolist()
+            plate_names = history_df["plate_name"].unique().tolist()
             selected_plate = st.selectbox("Select Menu Item", options=plate_names)
-            
-            filtered = history_df[history_df["plate"] == selected_plate].copy()
-            filtered["date"] = pd.to_datetime(filtered["date"], errors="coerce")
+            filtered = history_df[history_df["plate_name"] == selected_plate].copy()
             filtered = filtered.sort_values("date")
-
             fig_trend = px.line(
                 filtered,
                 x="date",
@@ -177,12 +180,11 @@ elif page == "📊 Dashboard":
             )
             st.plotly_chart(fig_trend, use_container_width=True)
 
-        # Keep raw COGS trend below
+        # Raw COGS Trend
         st.markdown("---")
         st.subheader("📦 Raw COGS Trend")
         cogs_df = df[df["category"] == "COGS"].copy()
-        if not cogs_df.empty and "date" in cogs_df.columns:
-            cogs_df["date"] = pd.to_datetime(cogs_df["date"], errors="coerce")
+        if not cogs_df.empty:
             cogs_trend = cogs_df.groupby("date")["total"].sum().reset_index()
             fig_cogs = px.line(
                 cogs_trend,
@@ -193,53 +195,86 @@ elif page == "📊 Dashboard":
                 title="Total COGS by Invoice Date"
             )
             st.plotly_chart(fig_cogs, use_container_width=True)
-        else:
-            st.info("COGS trend will appear once invoices with dates are uploaded.")
 
+        # Margin Overview — Owner only
+        if user.role == "owner":
+            st.markdown("---")
+            st.subheader("💰 Menu Margin Overview")
+            plates = load_plates(business_id)
+            prices = get_latest_prices(df)
+            margin_rows = []
+            for plate in plates:
+                result = calculate_plate_cost(plate, prices)
+                if result["selling_price"] > 0:
+                    margin_rows.append({
+                        "Menu Item": plate["name"],
+                        "Cost ($)": f"${result['total_cost']:.2f}",
+                        "Selling Price ($)": f"${result['selling_price']:.2f}",
+                        "Margin ($)": f"${result['margin']:.2f}" if result["margin"] is not None else "—",
+                        "Margin (%)": f"{result['margin_pct']}%" if result["margin_pct"] is not None else "—",
+                        "Status": "🟢 Healthy" if result["margin_pct"] and result["margin_pct"] >= 65
+                                  else "🟡 Watch" if result["margin_pct"] and result["margin_pct"] >= 50
+                                  else "🔴 At Risk"
+                    })
+            if margin_rows:
+                st.dataframe(pd.DataFrame(margin_rows), use_container_width=True)
+            else:
+                st.info("Set selling prices in Plate Costing to see margin analysis.")
+
+        # Full Ledger
         st.markdown("---")
-        st.subheader("📁 Export for Accountant")
-        
-        col_from, col_to = st.columns(2)
-        with col_from:
-            date_from = st.date_input("From", value=pd.Timestamp.now().date().replace(month=1, day=1))
-        with col_to:
-            date_to = st.date_input("To", value=pd.Timestamp.now().date())
+        st.subheader("📒 Accumulated Financial Ledger")
+        st.dataframe(df, use_container_width=True)
 
-        gst_rate = st.number_input("GST Rate (%)", value=10.0, step=0.5) / 100
+        # Export — Owner only
+        if user.role == "owner":
+            st.markdown("---")
+            st.subheader("📁 Export for Accountant")
+            col_from, col_to = st.columns(2)
+            with col_from:
+                date_from = st.date_input("From", value=pd.Timestamp.now().date().replace(month=1, day=1))
+            with col_to:
+                date_to = st.date_input("To", value=pd.Timestamp.now().date())
 
-        filtered_export = df.copy()
-        filtered_export["date"] = pd.to_datetime(filtered_export["date"], errors="coerce")
-        filtered_export = filtered_export[
-            (filtered_export["date"] >= pd.Timestamp(date_from)) &
-            (filtered_export["date"] <= pd.Timestamp(date_to))
-        ]
+            gst_rate = st.number_input("GST Rate (%)", value=10.0, step=0.5) / 100
 
-        # Add GST columns
-        filtered_export["gst_amount"] = (filtered_export["total"] * gst_rate / (1 + gst_rate)).round(2)
-        filtered_export["total_ex_gst"] = (filtered_export["total"] - filtered_export["gst_amount"]).round(2)
-        filtered_export["total_inc_gst"] = filtered_export["total"].round(2)
+            filtered_export = df.copy()
+            filtered_export = filtered_export[
+                (filtered_export["date"] >= pd.Timestamp(date_from)) &
+                (filtered_export["date"] <= pd.Timestamp(date_to))
+            ]
+            filtered_export["gst_amount"] = (filtered_export["total"] * gst_rate / (1 + gst_rate)).round(2)
+            filtered_export["total_ex_gst"] = (filtered_export["total"] - filtered_export["gst_amount"]).round(2)
+            filtered_export["total_inc_gst"] = filtered_export["total"].round(2)
 
-        # Reorder columns for accountant
-        export_columns = ["date", "invoice", "description", "quantity", "unit_price", 
-                         "total_ex_gst", "gst_amount", "total_inc_gst", "category"]
-        export_columns = [c for c in export_columns if c in filtered_export.columns]
-        filtered_export = filtered_export[export_columns]
+            export_cols = ["date", "description", "quantity", "unit_price",
+                          "total_ex_gst", "gst_amount", "total_inc_gst", "category"]
+            export_cols = [c for c in export_cols if c in filtered_export.columns]
 
-        st.caption(f"{len(filtered_export)} line items in selected range")
-        
-        # Summary totals
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Ex GST", f"${filtered_export['total_ex_gst'].sum():.2f}")
-        col2.metric("GST Amount", f"${filtered_export['gst_amount'].sum():.2f}")
-        col3.metric("Total Inc GST", f"${filtered_export['total_inc_gst'].sum():.2f}")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Total Ex GST", f"${filtered_export['total_ex_gst'].sum():.2f}")
+            col2.metric("GST Amount", f"${filtered_export['gst_amount'].sum():.2f}")
+            col3.metric("Total Inc GST", f"${filtered_export['total_inc_gst'].sum():.2f}")
 
-        csv = filtered_export.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="⬇️ Download CSV",
-            data=csv,
-            file_name=f"bookepaid_export_{date_from}_{date_to}.csv",
-            mime="text/csv"
-        )
+            csv = filtered_export[export_cols].to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="⬇️ Download CSV",
+                data=csv,
+                file_name=f"bookepaid_export_{date_from}_{date_to}.csv",
+                mime="text/csv"
+            )
+
+            st.markdown("---")
+            st.subheader("📄 Export PDF Report")
+            if st.button("Generate PDF Report"):
+                with st.spinner("Building report..."):
+                    pdf_output = generate_pdf(df, fig_pie)
+                st.download_button(
+                    label="⬇️ Download PDF",
+                    data=pdf_output,
+                    file_name=f"bookepaid_report_{pd.Timestamp.now().strftime('%Y%m%d')}.pdf",
+                    mime="application/pdf"
+                )
 
 # ─────────────────────────────────────────
 # PAGE 3: PLATE COSTING
@@ -248,21 +283,31 @@ elif page == "🍽️ Plate Costing":
     st.title("🍽️ Plate Costing")
     st.write("Track the cost of each menu item based on your latest supplier prices.")
 
-    df = load_data()
+    df = load_data(business_id)
     prices = get_latest_prices(df)
-    plates = load_plates()
+    plates = load_plates(business_id)
 
     if df.empty:
         st.info("💡 Upload invoices first so BookePaid can match ingredient prices.")
 
-    # ── Existing plates ──
     st.subheader("Menu Item Cost Tracker")
     for i, plate in enumerate(plates):
         result = calculate_plate_cost(plate, prices)
         with st.expander(f"{'🟢' if not result['has_unmatched'] else '🟡'} {plate['name']} — ${result['total_cost']:.2f}"):
 
-            st.caption("Edit ingredients and quantities:")
+            # Selling price — owner only
+            if user.role == "owner":
+                selling_price = st.number_input(
+                    "Selling Price ($)",
+                    value=float(plate.get("selling_price", 0)),
+                    min_value=0.0,
+                    step=0.50,
+                    key=f"sell_{i}"
+                )
+            else:
+                selling_price = plate.get("selling_price", 0)
 
+            st.caption("Edit ingredients and quantities:")
             state_key = f"ingredients_{i}"
             if state_key not in st.session_state:
                 st.session_state[state_key] = [
@@ -278,47 +323,31 @@ elif page == "🍽️ Plate Costing":
                 candidates = [(pk, pv) for pk, pv in prices.items()
                              if key in pk or pk in key]
                 candidates.sort(key=lambda x: x[1], reverse=True)
-                
-                col1, col2, col3, col4, col5 = st.columns([3, 1, 2, 2, 1])
 
+                col1, col2, col3, col4, col5 = st.columns([3, 1, 2, 2, 1])
                 with col1:
-                    new_desc = st.text_input(
-                        "Ingredient",
-                        value=ingredient["description"],
-                        key=f"desc_{i}_{j}",
-                        label_visibility="collapsed"
-                    )
+                    new_desc = st.text_input("Ingredient", value=ingredient["description"],
+                                            key=f"desc_{i}_{j}", label_visibility="collapsed")
                 with col2:
-                    new_qty = st.number_input(
-                        "Grams",
-                        value=round(ingredient["quantity_kg"] * 1000, 1),
-                        min_value=0.1,
-                        step=1.0,
-                        key=f"qty_{i}_{j}",
-                        label_visibility="collapsed"
-                    )
+                    new_qty = st.number_input("Grams", value=round(ingredient["quantity_kg"] * 1000, 1),
+                                             min_value=0.1, step=1.0, key=f"qty_{i}_{j}",
+                                             label_visibility="collapsed")
                 with col3:
                     if candidates:
                         options = [c[0] for c in candidates]
-                        selected = st.selectbox(
-                            "Match",
-                            options=options,
-                            key=f"match_{i}_{j}",
-                            label_visibility="collapsed"
-                        )
+                        selected = st.selectbox("Match", options=options, key=f"match_{i}_{j}",
+                                               label_visibility="collapsed")
                         selected_price = dict(candidates)[selected]
                         cost = round(selected_price * (new_qty / 1000), 4)
                         running_total += cost
                     else:
                         st.caption("⚠️ No match")
                         cost = None
-
                 with col4:
                     if cost is not None:
-                        st.metric("Cost", f"${cost:.4f}", label_visibility="visible")
+                        st.caption(f"${cost:.4f}")
                     else:
                         st.caption("—")
-
                 with col5:
                     if st.button("🗑️", key=f"del_ing_{i}_{j}"):
                         to_delete = j
@@ -342,18 +371,19 @@ elif page == "🍽️ Plate Costing":
             col_save, col_delete = st.columns([1, 1])
             with col_save:
                 if st.button("💾 Save Changes", key=f"save_{i}"):
-                    plates[i]["ingredients"] = [
-                        {"description": ing["description"], "quantity_kg": ing["quantity_kg"]}
-                        for ing in st.session_state[state_key]
-                    ]
-                    save_plates(plates)
+                    update_plate(
+                        plate["id"],
+                        plate["name"],
+                        selling_price if user.role == "owner" else plate.get("selling_price", 0),
+                        st.session_state[state_key],
+                        business_id
+                    )
                     del st.session_state[state_key]
                     st.success("✅ Saved!")
                     st.rerun()
             with col_delete:
                 if st.button("🗑️ Delete Plate", key=f"delete_{i}"):
-                    plates.pop(i)
-                    save_plates(plates)
+                    delete_plate(plate["id"], business_id)
                     st.success("Deleted!")
                     st.rerun()
 
@@ -361,39 +391,29 @@ elif page == "🍽️ Plate Costing":
                 st.caption("🟡 Some ingredients couldn't be matched to invoice data yet.")
 
     st.markdown("---")
-
-    # ── Add new plate ──
     st.subheader("➕ Add New Menu Item")
 
     if "new_plate_ingredients" not in st.session_state:
         st.session_state.new_plate_ingredients = [{"description": "", "quantity_kg": 0.1}]
 
     new_name = st.text_input("Menu item name", placeholder="e.g. Flat White")
-
     st.caption("Ingredients:")
     to_delete_new = None
+
     for j, ingredient in enumerate(st.session_state.new_plate_ingredients):
         col1, col2, col3 = st.columns([4, 2, 1])
         with col1:
             st.session_state.new_plate_ingredients[j]["description"] = st.text_input(
-                "Ingredient",
-                value=ingredient["description"],
-                placeholder="e.g. Espresso Beans",
-                key=f"new_desc_{j}",
-                label_visibility="collapsed"
-            )
+                "Ingredient", value=ingredient["description"],
+                placeholder="e.g. Espresso Beans", key=f"new_desc_{j}",
+                label_visibility="collapsed")
         with col2:
-            new_qty = st.number_input(
-                "Grams",
-                value=round(ingredient["quantity_kg"] * 1000, 1),
-                min_value=0.1,
-                step=1.0,
-                key=f"new_qty_{j}",
-                label_visibility="collapsed"
-            )
+            new_qty = st.number_input("Grams", value=round(ingredient["quantity_kg"] * 1000, 1),
+                                     min_value=0.1, step=1.0, key=f"new_qty_{j}",
+                                     label_visibility="collapsed")
             st.session_state.new_plate_ingredients[j]["quantity_kg"] = new_qty / 1000
         with col3:
-            if st.button("🗑️", key=f"del_new_{j}", help="Remove ingredient"):
+            if st.button("🗑️", key=f"del_new_{j}"):
                 to_delete_new = j
 
     if to_delete_new is not None:
@@ -407,20 +427,21 @@ elif page == "🍽️ Plate Costing":
     st.markdown("")
     if st.button("💾 Save New Menu Item"):
         if new_name and any(ing["description"] for ing in st.session_state.new_plate_ingredients):
-            plates.append({
-                "name": new_name,
-                "ingredients": st.session_state.new_plate_ingredients
-            })
-            save_plates(plates)
+            save_plate({"name": new_name, "ingredients": st.session_state.new_plate_ingredients}, business_id)
             del st.session_state.new_plate_ingredients
             st.success(f"✅ {new_name} saved!")
             st.rerun()
         else:
             st.error("Please enter a name and at least one ingredient.")
 
-    st.markdown("---")
-    if st.button("🔄 Reset All Menu Templates"):
-        if os.path.exists("plates.json"):
-            os.remove("plates.json")
-        st.success("Reset! Refresh to run onboarding again.")
-        st.rerun()
+    # Reset onboarding — owner only
+    if user.role == "owner":
+        st.markdown("---")
+        if st.button("🔄 Reset All Menu Templates"):
+            from database import get_client
+            db = get_client()
+            plates_to_delete = load_plates(business_id)
+            for p in plates_to_delete:
+                delete_plate(p["id"], business_id)
+            st.success("Reset! Refresh to run onboarding again.")
+            st.rerun()

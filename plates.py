@@ -1,13 +1,12 @@
 import json
-import os
 import pandas as pd
 import anthropic
 import streamlit as st
- 
-PLATES_FILE = "plates.json"
- 
+import os
+from database import get_client
+
 RESTAURANT_TYPES = [
-    "Café & Coffee Shop",
+    "Specialty Coffee Shop",
     "Bakery & Pastry",
     "Juice & Smoothie Bar",
     "Breakfast & Brunch Café",
@@ -18,18 +17,100 @@ RESTAURANT_TYPES = [
     "Burger & Grill",
     "Vegan & Healthy Food",
     "Sandwich & Deli",
-    "Ice Cream & Desserts",
-    "Middle Eastern Restaurant",
-    "Indian Restaurant",
-    "Kebab & Street Food",
+    "Ice Cream & Desserts"
 ]
- 
- 
+
+
+def plates_exist(business_id: str) -> bool:
+    """Check if this business has any plates in Supabase."""
+    db = get_client()
+    result = db.table("plates").select("id")\
+        .eq("business_id", business_id)\
+        .execute()
+    return len(result.data) > 0
+
+
+def load_plates(business_id: str) -> list:
+    """Load all plates with ingredients for a business."""
+    db = get_client()
+    plates_result = db.table("plates").select("*")\
+        .eq("business_id", business_id)\
+        .execute()
+    plates = []
+    for plate in plates_result.data:
+        ingredients_result = db.table("ingredients").select("*")\
+            .eq("plate_id", plate["id"])\
+            .execute()
+        plates.append({
+            "id": plate["id"],
+            "name": plate["name"],
+            "selling_price": plate.get("selling_price", 0),
+            "ingredients": [
+                {
+                    "description": i["description"],
+                    "quantity_kg": i["quantity_kg"]
+                }
+                for i in ingredients_result.data
+            ]
+        })
+    return plates
+
+
+def save_plate(plate: dict, business_id: str) -> str:
+    """Insert a new plate with ingredients, return plate id."""
+    db = get_client()
+    plate_result = db.table("plates").insert({
+        "business_id": business_id,
+        "name": plate["name"],
+        "selling_price": plate.get("selling_price", 0)
+    }).execute()
+    plate_id = plate_result.data[0]["id"]
+    ingredients = [
+        {
+            "plate_id": plate_id,
+            "description": ing["description"],
+            "quantity_kg": ing["quantity_kg"]
+        }
+        for ing in plate["ingredients"]
+    ]
+    db.table("ingredients").insert(ingredients).execute()
+    return plate_id
+
+
+def update_plate(plate_id: str, name: str, selling_price: float,
+                 ingredients: list, business_id: str):
+    """Update plate details and replace ingredients."""
+    db = get_client()
+    db.table("plates").update({
+        "name": name,
+        "selling_price": selling_price
+    }).eq("id", plate_id).eq("business_id", business_id).execute()
+    db.table("ingredients").delete().eq("plate_id", plate_id).execute()
+    new_ingredients = [
+        {
+            "plate_id": plate_id,
+            "description": ing["description"],
+            "quantity_kg": ing["quantity_kg"]
+        }
+        for ing in ingredients
+    ]
+    if new_ingredients:
+        db.table("ingredients").insert(new_ingredients).execute()
+
+
+def delete_plate(plate_id: str, business_id: str):
+    """Delete a plate and its ingredients."""
+    db = get_client()
+    db.table("ingredients").delete().eq("plate_id", plate_id).execute()
+    db.table("plates").delete()\
+        .eq("id", plate_id)\
+        .eq("business_id", business_id).execute()
+
+
 def generate_plates_for_restaurant(restaurant_type: str) -> list:
-    """Call Claude to generate typical dishes and ingredients for a restaurant type."""
+    """Call Claude to generate typical dishes for a restaurant type."""
     api_key = os.environ.get("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
     client = anthropic.Anthropic(api_key=api_key)
- 
     response = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=2000,
@@ -37,57 +118,24 @@ def generate_plates_for_restaurant(restaurant_type: str) -> list:
             {
                 "role": "user",
                 "content": f"""You are helping set up a food cost tracking app for a {restaurant_type}.
- 
 Generate 8 typical menu items for this type of business.
 Return ONLY a JSON array, no markdown, no explanation.
- 
 Each object must have:
 - name (string): the menu item name
 - ingredients (array): list of ingredient objects, each with:
   - description (string): ingredient name as it would appear on a supplier invoice
-  - quantity_kg (number): typical quantity in kg used per serving (use decimals, e.g. 0.15)
- 
-Example format:
-[
-  {{
-    "name": "Flat White",
-    "ingredients": [
-      {{"description": "Espresso Beans", "quantity_kg": 0.018}},
-      {{"description": "Full Cream Milk", "quantity_kg": 0.15}}
-    ]
-  }}
-]
- 
-Be realistic with quantities. Only return the JSON array."""
+  - quantity_kg (number): typical quantity in kg used per serving
+Only return the JSON array."""
             }
         ]
     )
- 
     raw = response.content[0].text
     raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     return json.loads(raw)
- 
- 
-def load_plates() -> list:
-    """Load plates from file."""
-    if os.path.exists(PLATES_FILE):
-        with open(PLATES_FILE, "r") as f:
-            return json.load(f)
-    return []
- 
- 
-def save_plates(plates: list):
-    """Save plates to file."""
-    with open(PLATES_FILE, "w") as f:
-        json.dump(plates, f, indent=2)
- 
- 
-def plates_exist() -> bool:
-    """Check if plates have been set up."""
-    return os.path.exists(PLATES_FILE)
- 
- 
+
+
 def get_latest_prices(df: pd.DataFrame) -> dict:
+    """Extract latest unit price per ingredient from invoice data."""
     if df.empty:
         return {}
     cogs_df = df[df["category"] == "COGS"].copy()
@@ -97,48 +145,48 @@ def get_latest_prices(df: pd.DataFrame) -> dict:
     cogs_df["date"] = pd.to_datetime(cogs_df["date"], errors="coerce")
     latest = cogs_df.sort_values("date").groupby("description_lower")["unit_price"].last()
     return latest.to_dict()
- 
- 
+
+
 def calculate_plate_cost(plate: dict, prices: dict) -> dict:
+    """Calculate cost of a plate based on latest ingredient prices."""
     total_cost = 0.0
     breakdown = []
-
     for ingredient in plate["ingredients"]:
         key = ingredient["description"].lower().strip()
         qty = ingredient["quantity_kg"]
-
-        # Find all matches
-        matched_candidates = []
-        for price_key, price_val in prices.items():
-            if key in price_key or price_key in key:
-                matched_candidates.append((price_key, price_val))
-
-        if matched_candidates:
-            matched_candidates.sort(key=lambda x: x[1], reverse=True)
+        candidates = [(pk, pv) for pk, pv in prices.items()
+                     if key in pk or pk in key]
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        if candidates:
+            selected_price = candidates[0][1]
+            cost = round(selected_price * qty, 4)
+            total_cost += cost
             breakdown.append({
                 "ingredient": ingredient["description"],
                 "qty_g": round(qty * 1000, 1),
-                "candidates": matched_candidates,
-                "selected": matched_candidates[0][0],
-                "unit_price": matched_candidates[0][1],
-                "cost": round(matched_candidates[0][1] * qty, 4),
+                "candidates": candidates,
+                "unit_price": selected_price,
+                "cost": cost,
                 "matched": True
             })
-            total_cost += matched_candidates[0][1] * qty
         else:
             breakdown.append({
                 "ingredient": ingredient["description"],
                 "qty_g": round(qty * 1000, 1),
                 "candidates": [],
-                "selected": None,
                 "unit_price": None,
                 "cost": None,
                 "matched": False
             })
-
+    selling_price = plate.get("selling_price", 0)
+    margin = round(selling_price - total_cost, 4) if selling_price > 0 else None
+    margin_pct = round((margin / selling_price) * 100, 1) if selling_price and selling_price > 0 else None
     return {
         "name": plate["name"],
         "total_cost": total_cost,
+        "selling_price": selling_price,
+        "margin": margin,
+        "margin_pct": margin_pct,
         "breakdown": breakdown,
         "has_unmatched": any(not b["matched"] for b in breakdown)
     }

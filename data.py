@@ -1,91 +1,96 @@
 import pandas as pd
-import os
-import hashlib
-from plates import load_plates, get_latest_prices, calculate_plate_cost
-
-DATA_FILE = "data.csv"
-
-COLUMNS = ["invoice", "date", "description", "quantity", "unit_price", "total", "category"]
-
-HASH_FILE = "invoice_hashes.txt"
+from database import get_client
 
 
-def load_data() -> pd.DataFrame:
-    """Load accumulated invoice data from CSV."""
-    if os.path.exists(DATA_FILE):
-        df = pd.read_csv(DATA_FILE)
-        # Ensure date column exists for older data files
-        if "date" not in df.columns:
-            df["date"] = "Unknown"
+def load_data(business_id: str) -> pd.DataFrame:
+    """Load all line items for a business from Supabase."""
+    db = get_client()
+    result = db.table("line_items").select("*")\
+        .eq("business_id", business_id)\
+        .execute()
+    if result.data:
+        df = pd.DataFrame(result.data)
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        df = df.sort_values("date").reset_index(drop=True)
         return df
-    return pd.DataFrame(columns=COLUMNS)
+    return pd.DataFrame(columns=["id", "invoice_id", "business_id", "description",
+                                  "quantity", "unit", "unit_price", "total",
+                                  "category", "date"])
 
 
-def save_data(df: pd.DataFrame):
-    """Save invoice data to CSV."""
-    df.to_csv(DATA_FILE, index=False)
+def is_duplicate_invoice(invoice_number: str, supplier: str, business_id: str) -> bool:
+    """Check if invoice number + supplier already exists for this business."""
+    if invoice_number == "UNKNOWN" or supplier == "UNKNOWN":
+        return False
+    db = get_client()
+    result = db.table("invoices").select("id")\
+        .eq("business_id", business_id)\
+        .ilike("invoice_number", invoice_number)\
+        .ilike("supplier", supplier)\
+        .execute()
+    return len(result.data) > 0
 
 
-def is_duplicate(invoice_name: str) -> bool:
-    """Check if invoice has already been processed."""
-    df = load_data()
-    return invoice_name in df["invoice"].values
+def save_invoice(invoice_number: str, supplier: str, date: str,
+                 filename: str, business_id: str) -> str:
+    """Insert invoice record and return its ID."""
+    db = get_client()
+    result = db.table("invoices").insert({
+        "business_id": business_id,
+        "invoice_number": invoice_number,
+        "supplier": supplier,
+        "date": date,
+        "filename": filename
+    }).execute()
+    return result.data[0]["id"]
 
 
-def append_invoice(new_df: pd.DataFrame):
-    existing_df = load_data()
-    combined = pd.concat([existing_df, new_df], ignore_index=True)
-    combined["date"] = pd.to_datetime(combined["date"], errors="coerce")
-    combined = combined.sort_values("date").reset_index(drop=True)
-    save_data(combined)
+def save_line_items(df: pd.DataFrame, invoice_id: str, business_id: str):
+    """Insert all line items for an invoice into Supabase."""
+    db = get_client()
+    rows = []
+    for _, row in df.iterrows():
+        rows.append({
+            "business_id": business_id,
+            "invoice_id": invoice_id,
+            "description": row.get("description"),
+            "quantity": row.get("quantity"),
+            "unit": row.get("unit"),
+            "unit_price": row.get("unit_price"),
+            "total": row.get("total"),
+            "category": row.get("category"),
+            "date": str(row.get("date", ""))[:10]
+        })
+    db.table("line_items").insert(rows).execute()
 
-PLATE_HISTORY_FILE = "plate_history.csv"
 
-def load_plate_history() -> pd.DataFrame:
-    if os.path.exists(PLATE_HISTORY_FILE):
-        return pd.read_csv(PLATE_HISTORY_FILE)
-    return pd.DataFrame(columns=["date", "plate", "cost"])
+def load_plate_history(business_id: str) -> pd.DataFrame:
+    """Load plate cost history for a business."""
+    db = get_client()
+    result = db.table("plate_history").select("*")\
+        .eq("business_id", business_id)\
+        .execute()
+    if result.data:
+        df = pd.DataFrame(result.data)
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        return df.sort_values("date")
+    return pd.DataFrame(columns=["id", "business_id", "plate_id", "plate_name", "date", "cost"])
 
-def save_plate_history(df: pd.DataFrame):
-    df.to_csv(PLATE_HISTORY_FILE, index=False)
 
-def snapshot_plate_costs(invoice_date: str):
-    
-    df = load_data()
+def snapshot_plate_costs(invoice_date: str, business_id: str):
+    """Recalculate all plate costs and save snapshot if all ingredients matched."""
+    from plates import load_plates, get_latest_prices, calculate_plate_cost
+    df = load_data(business_id)
     prices = get_latest_prices(df)
-    plates = load_plates()
-    history = load_plate_history()
-
-    new_rows = []
+    plates = load_plates(business_id)
+    db = get_client()
     for plate in plates:
         result = calculate_plate_cost(plate, prices)
-        if result["total_cost"] > 0:
-            new_rows.append({
+        if result["total_cost"] > 0 and not result["has_unmatched"]:
+            db.table("plate_history").insert({
+                "business_id": business_id,
+                "plate_id": plate.get("id"),
+                "plate_name": plate["name"],
                 "date": invoice_date,
-                "plate": plate["name"],
                 "cost": round(result["total_cost"], 4)
-            })
-
-    if new_rows: # If we have any valid plate snapshots, save them
-        new_df = pd.DataFrame(new_rows)
-        combined = pd.concat([history, new_df], ignore_index=True)
-        save_plate_history(combined)
-
-    if result["total_cost"] > 0 and not result["has_unmatched"]:
-        new_df = pd.DataFrame(new_rows)
-        combined = pd.concat([history, new_df], ignore_index=True)
-        save_plate_history(combined)
-
-
-def is_duplicate_invoice(invoice_number: str, supplier: str) -> bool:
-    """Check if invoice number + supplier combo already exists."""
-    if invoice_number == "UNKNOWN" or supplier == "UNKNOWN":
-        return False  # can't reliably check, let it through
-    df = load_data()
-    if "invoice_number" not in df.columns:
-        return False
-    match = df[
-        (df["invoice_number"].str.upper() == invoice_number.upper()) &
-        (df["supplier"].str.upper() == supplier.upper())
-    ]
-    return not match.empty
+            }).execute()
