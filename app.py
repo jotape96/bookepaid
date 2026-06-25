@@ -431,7 +431,13 @@ elif page == "🍽️ Plate Costing":
             col_save, col_delete = st.columns([1, 1])
             with col_save:
                 if st.button("💾 Save Changes", key=f"save_{i}"):
-                    update_plate(...)
+                    update_plate(
+                        plate["id"],
+                        plate["name"],
+                        selling_price if user.role == "owner" else plate.get("selling_price", 0),
+                        st.session_state[state_key],
+                        business_id
+                    )
                     del st.session_state[state_key]
                     st.session_state[open_key] = False
                     st.success("✅ Saved!")
