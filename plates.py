@@ -5,6 +5,7 @@ import streamlit as st
 import os
 from database import get_client
 import base64
+from rapidfuzz import fuzz, process
 
 RESTAURANT_TYPES = [
     "Specialty Coffee Shop",
@@ -155,8 +156,18 @@ def calculate_plate_cost(plate: dict, prices: dict) -> dict:
     for ingredient in plate["ingredients"]:
         key = ingredient["description"].lower().strip()
         qty = ingredient["quantity_kg"]
-        candidates = [(pk, pv) for pk, pv in prices.items()
-                     if key in pk or pk in key]
+        # Fuzzy match with minimum 80% similarity threshold
+        matches = process.extract(
+            key,
+            prices.keys(),
+            scorer=fuzz.token_sort_ratio,
+            limit=5
+        )
+        candidates = [
+            (match[0], prices[match[0]])
+            for match in matches
+            if match[1] >= 80  # minimum 80% similarity
+        ]
         candidates.sort(key=lambda x: x[1], reverse=True)
         if candidates:
             selected_price = candidates[0][1]
