@@ -262,10 +262,6 @@ elif page == "📊 Dashboard":
             else:
                 st.info("Set selling prices in Plate Costing to see margin analysis.")
 
-        # Full Ledger
-        st.markdown("---")
-        st.subheader("📒 Accumulated Financial Ledger")
-        st.dataframe(df, use_container_width=True)
 
         # Export — Owner only
         if user.role == "owner":
