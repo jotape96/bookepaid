@@ -330,7 +330,7 @@ elif page == "🍽️ Plate Costing":
     st.subheader("Menu Item Cost Tracker")
     for i, plate in enumerate(plates):
         result = calculate_plate_cost(plate, prices)
-        open_key = f"open_{i}"
+        open_key = f"plate_open_{plate['id']}"
         if open_key not in st.session_state:
             st.session_state[open_key] = False
 
@@ -338,7 +338,7 @@ elif page == "🍽️ Plate Costing":
             f"{'🟢' if not result['has_unmatched'] else '🟡'} {plate['name']} — ${result['total_cost']:.2f}",
             expanded=st.session_state[open_key]
         ):
-            st.session_state[open_key] = True
+            st.session_state[f"plate_open_{plate['id']}"] = False
 
             # Selling price — owner only
             if user.role == "owner":
