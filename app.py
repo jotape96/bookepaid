@@ -331,23 +331,35 @@ elif page == "🍽️ Plate Costing":
     for i, plate in enumerate(plates):
         result = calculate_plate_cost(plate, prices)
         open_key = f"plate_open_{plate['id']}"
+        state_key = f"ingredients_{plate['id']}"
+
         if open_key not in st.session_state:
             st.session_state[open_key] = False
+
+        # Initialise ingredients with unique IDs
+        if state_key not in st.session_state:
+            st.session_state[state_key] = [
+                {
+                    "uid": f"{plate['id']}_{j}",
+                    "description": ing["description"],
+                    "quantity_kg": ing["quantity_kg"]
+                }
+                for j, ing in enumerate(plate["ingredients"])
+            ]
 
         with st.expander(
             f"{'🟢' if not result['has_unmatched'] else '🟡'} {plate['name']} — ${result['total_cost']:.2f}",
             expanded=st.session_state[open_key]
         ):
-            st.session_state[f"plate_open_{plate['id']}"] = False
+            st.session_state[open_key] = True
 
-            # Selling price — owner only
             if user.role == "owner":
                 selling_price = st.number_input(
                     "Selling Price ($)",
                     value=float(plate.get("selling_price", 0)),
                     min_value=0.0,
                     step=0.50,
-                    key=f"sell_{i}"
+                    key=f"sell_{plate['id']}"
                 )
             else:
                 selling_price = plate.get("selling_price", 0)
@@ -364,35 +376,44 @@ elif page == "🍽️ Plate Costing":
                 st.caption("**Cost**")
             with h5:
                 st.caption("")
-            state_key = f"ingredients_{i}"
-            if state_key not in st.session_state:
-                st.session_state[state_key] = [
-                    {"description": ing["description"], "quantity_kg": ing["quantity_kg"]}
-                    for ing in plate["ingredients"]
-                ]
 
-            to_delete = None
+            to_delete_uid = None
             running_total = 0.0
 
-            for j, ingredient in enumerate(st.session_state[state_key]):
+            for ingredient in st.session_state[state_key]:
+                uid = ingredient["uid"]
                 key = ingredient["description"].lower().strip()
-                candidates = [(pk, pv) for pk, pv in prices.items()
-                             if key in pk or pk in key]
+                from rapidfuzz import process, fuzz
+                matches = process.extract(key, prices.keys(), scorer=fuzz.token_sort_ratio, limit=5)
+                candidates = [(m[0], prices[m[0]]) for m in matches if m[1] >= 80]
                 candidates.sort(key=lambda x: x[1], reverse=True)
 
                 col1, col2, col3, col4, col5 = st.columns([3, 1, 2, 2, 1])
                 with col1:
-                    new_desc = st.text_input("Ingredient", value=ingredient["description"],
-                                            key=f"desc_{i}_{j}", label_visibility="collapsed")
+                    new_desc = st.text_input(
+                        "Ingredient",
+                        value=ingredient["description"],
+                        key=f"desc_{uid}",
+                        label_visibility="collapsed"
+                    )
                 with col2:
-                    new_qty = st.number_input("Grams", value=round(ingredient["quantity_kg"] * 1000, 1),
-                                             min_value=0.1, step=1.0, key=f"qty_{i}_{j}",
-                                             label_visibility="collapsed")
+                    new_qty = st.number_input(
+                        "Grams",
+                        value=round(ingredient["quantity_kg"] * 1000, 1),
+                        min_value=0.1,
+                        step=1.0,
+                        key=f"qty_{uid}",
+                        label_visibility="collapsed"
+                    )
                 with col3:
                     if candidates:
                         options = [c[0] for c in candidates]
-                        selected = st.selectbox("Match", options=options, key=f"match_{i}_{j}",
-                                               label_visibility="collapsed")
+                        selected = st.selectbox(
+                            "Match",
+                            options=options,
+                            key=f"match_{uid}",
+                            label_visibility="collapsed"
+                        )
                         selected_price = dict(candidates)[selected]
                         cost = round(selected_price * (new_qty / 1000), 4)
                         running_total += cost
@@ -405,40 +426,41 @@ elif page == "🍽️ Plate Costing":
                     else:
                         st.caption("—")
                 with col5:
-                    if st.button("🗑️", key=f"del_ing_{i}_{j}"):
-                        to_delete = j
+                    if st.button("🗑️", key=f"del_{uid}"):
+                        to_delete_uid = uid
 
-                st.session_state[state_key][j] = {
-                    "description": new_desc,
-                    "quantity_kg": new_qty / 1000
-                }
+                # Update values in session state
+                ingredient["description"] = new_desc
+                ingredient["quantity_kg"] = new_qty / 1000
 
             st.markdown(f"**Estimated Plate Cost: ${running_total:.4f}**")
 
-            if to_delete is not None:
-                st.session_state[state_key].pop(to_delete)
-                # Clear all widget keys for this plate to avoid index conflicts
-                keys_to_clear = [k for k in st.session_state.keys() 
-                                 if k.startswith(f"desc_{i}_") or 
-                                    k.startswith(f"qty_{i}_") or 
-                                    k.startswith(f"match_{i}_")]
-                for k in keys_to_clear:
-                    del st.session_state[k]
+            if to_delete_uid is not None:
+                st.session_state[state_key] = [
+                    ing for ing in st.session_state[state_key]
+                    if ing["uid"] != to_delete_uid
+                ]
                 st.rerun()
 
-            if st.button("➕ Add Ingredient", key=f"add_ing_{i}"):
-                st.session_state[state_key].append({"description": "New Ingredient", "quantity_kg": 0.1})
+            if st.button("➕ Add Ingredient", key=f"add_ing_{plate['id']}"):
+                import uuid
+                st.session_state[state_key].append({
+                    "uid": str(uuid.uuid4()),
+                    "description": "New Ingredient",
+                    "quantity_kg": 0.1
+                })
                 st.rerun()
 
             st.markdown("")
             col_save, col_delete = st.columns([1, 1])
             with col_save:
-                if st.button("💾 Save Changes", key=f"save_{i}"):
+                if st.button("💾 Save Changes", key=f"save_{plate['id']}"):
                     update_plate(
                         plate["id"],
                         plate["name"],
                         selling_price if user.role == "owner" else plate.get("selling_price", 0),
-                        st.session_state[state_key],
+                        [{"description": ing["description"], "quantity_kg": ing["quantity_kg"]}
+                         for ing in st.session_state[state_key]],
                         business_id
                     )
                     del st.session_state[state_key]
@@ -446,7 +468,7 @@ elif page == "🍽️ Plate Costing":
                     st.success("✅ Saved!")
                     st.rerun()
             with col_delete:
-                if st.button("🗑️ Delete Plate", key=f"delete_{i}"):
+                if st.button("🗑️ Delete Plate", key=f"delete_{plate['id']}"):
                     delete_plate(plate["id"], business_id)
                     st.session_state[open_key] = False
                     st.success("Deleted!")
