@@ -460,6 +460,13 @@ elif page == "🍽️ Plate Costing":
 
     new_name = st.text_input("Menu item name", placeholder="e.g. Flat White")
     st.caption("Ingredients:")
+    h1, h2, h3 = st.columns([4, 2, 1])
+    with h1:
+        st.caption("**Ingredient**")
+    with h2:
+        st.caption("**Grams**")
+    with h3:
+        st.caption("")
     to_delete_new = None
 
     for j, ingredient in enumerate(st.session_state.new_plate_ingredients):
