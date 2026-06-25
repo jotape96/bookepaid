@@ -417,6 +417,13 @@ elif page == "🍽️ Plate Costing":
 
             if to_delete is not None:
                 st.session_state[state_key].pop(to_delete)
+                # Clear all widget keys for this plate to avoid index conflicts
+                keys_to_clear = [k for k in st.session_state.keys() 
+                                 if k.startswith(f"desc_{i}_") or 
+                                    k.startswith(f"qty_{i}_") or 
+                                    k.startswith(f"match_{i}_")]
+                for k in keys_to_clear:
+                    del st.session_state[k]
                 st.rerun()
 
             if st.button("➕ Add Ingredient", key=f"add_ing_{i}"):
