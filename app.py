@@ -3,7 +3,14 @@ import pandas as pd
 import plotly.express as px
 import os
 
+# --- 1. MUST BE THE FIRST STREAMLIT COMMAND ---
+st.set_page_config(page_title="BookepAId", page_icon="💜", layout="wide")
+
 from auth import check_auth
+user = check_auth()
+business_id = user.business_id
+
+# --- 2. IMPORTS ---
 from data import (load_data, is_duplicate_invoice, save_invoice,
                   save_line_items, snapshot_plate_costs, load_plate_history)
 from invoice import extract_invoice, extract_invoice_image
@@ -12,14 +19,6 @@ from plates import (load_plates, save_plate, update_plate, delete_plate,
                     plates_exist, get_latest_prices, calculate_plate_cost,
                     generate_plates_for_restaurant, extract_plates_from_menu,
                     RESTAURANT_TYPES)
-
-# --- AUTH ---
-user = check_auth()
-
-# --- CONFIG ---
-st.set_page_config(page_title="BookepAId", page_icon="💜", layout="wide")
-
-business_id = user.business_id
 
 # ─────────────────────────────────────────
 # ONBOARDING — runs once if no plates exist
