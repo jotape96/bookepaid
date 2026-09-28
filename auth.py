@@ -35,11 +35,22 @@ def check_auth():
     if st.button("Log In"):
         try:
             res = supabase.auth.sign_in_with_password({"email": email, "password": password})
-            # Construct your existing User class using Supabase's authenticated details
+            user_id = res.user.id
+            
+            # --- ASEGURAR QUE EL BUSINESS EXISTE ---
+            # Verifica si el negocio ya está creado en la tabla businesses
+            biz_check = supabase.table("businesses").select("id").eq("id", user_id).execute()
+            if not biz_check.data:
+                # Si no existe, lo inserta usando el mismo ID del usuario
+                supabase.table("businesses").insert({
+                    "id": user_id,
+                    "name": "My Restaurant"
+                }).execute()
+
             st.session_state.user = User(
-                user_id=res.user.id,
+                user_id=user_id,
                 email=res.user.email,
-                role="owner"  # or fetch from a user_profiles table if needed
+                role="owner"
             )
             st.rerun()
         except Exception as e:

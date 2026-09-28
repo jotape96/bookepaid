@@ -6,6 +6,7 @@ import os
 from database import get_client
 import base64
 from rapidfuzz import fuzz, process
+import re
 
 RESTAURANT_TYPES = [
     "Specialty Coffee Shop",
@@ -32,6 +33,7 @@ def plates_exist(business_id: str) -> bool:
     return len(result.data) > 0
 
 
+
 def load_plates(business_id: str) -> list:
     """Load all plates with ingredients for a business."""
     db = get_client()
@@ -56,6 +58,19 @@ def load_plates(business_id: str) -> list:
             ]
         })
     return plates
+
+def clean_ingredient_description(description: str) -> str:
+    """Clean ingredient description by removing extra whitespace and punctuation."""
+    if not description:
+        return ""
+    # 1. Delete any content in parentheses or brackets
+    description = re.sub(r'\(.*?\)', '', description)
+    #2. Delete non desired characters and extra duplicate spaces
+    description = "".join(description.splitlines())  # Replace newlines with space
+    description = description.lower().strip()
+    description = re.sub(r'[^\w\s]', '', description)  # Remove punctuation
+    description = re.sub(r'\s+', ' ', description)  # Replace multiple spaces with single space
+    return description
 
 
 def save_plate(plate: dict, business_id: str) -> str:
@@ -133,7 +148,14 @@ Only return the JSON array."""
     )
     raw = response.content[0].text
     raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-    return json.loads(raw)
+    plates = json.loads(raw)
+
+    for plate in plates:
+        for ing in plate.get("ingredients", []):
+            ing["description"] = clean_ingredient_description(ing.get("description", ""))
+
+    return plates
+
 
 
 def get_latest_prices(df: pd.DataFrame) -> dict:
@@ -233,16 +255,23 @@ def extract_plates_from_menu(file_bytes: bytes, file_type: str) -> list:
     content.append({
         "type": "text",
         "text": """This is a restaurant or café menu. Extract all food and drink items.
-For each item generate typical ingredients needed to make it.
-Return ONLY a JSON array, no markdown, no explanation.
-Each object must have:
-- name (string): the exact menu item name as shown
-- selling_price (number): the price shown on the menu in numeric form, 0 if not found
-- ingredients (array): list of ingredient objects, each with:
-  - description (string): ingredient name as it would appear on a supplier invoice
-  - quantity_kg (number): typical quantity in kg used per serving be as realistic as possible (e.g. 0.15 for 150g)
-Only include food and drink items, skip descriptions, prices, and categories.
-Only return the JSON array."""
+For each item generate typical raw ingredients needed to make it.
+Return ONLY a valid JSON array, without markdown code fences or conversational text.
+
+Each object must follow this structure:
+- name (string): exact menu item name
+- selling_price (number): numeric price shown on the menu, 0 if not found
+- ingredients (array): list of raw ingredient objects, each containing:
+  - description (string): standard wholesale ingredient name (MAX 3 words, e.g. "Rice Noodles", "Barramundi Fillet", "Chicken Breast", "Tamarind Paste").
+  - quantity_kg (number): realistic quantity in kg per serving (e.g. 0.15 for 150g)
+
+CRITICAL INGREDIENT RULES:
+- NEVER include dimensions, measurements, or cuts in parentheses (e.g., write "Rice Noodles", NEVER "Flat Noodles (3mm wide)").
+- NEVER include preparation methods (e.g., write "Pork Belly", NEVER "Crispy roasted pork belly").
+PROTEIN OPTIONS RULE:
+- If a menu item states "Choice of chicken, beef, prawns or tofu", DO NOT create a single generic dish.
+- Instead, create separate dish entries for each option (e.g. "Pad Thai - Chicken", "Pad Thai - Beef", "Pad Thai - Prawns").
+- Keep base ingredients identical across these variants, changing only the protein item and adjusting the selling price if the menu specifies a surcharge."""
     })
 
     response = client.messages.create(
@@ -253,4 +282,11 @@ Only return the JSON array."""
 
     raw = response.content[0].text
     raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-    return json.loads(raw)
+    plates = json.loads(raw)
+
+    # Post-procesamiento para garantizar limpieza de descripciones
+    for plate in plates:
+        for ing in plate.get("ingredients", []):
+            ing["description"] = clean_ingredient_description(ing.get("description", ""))
+
+    return plates

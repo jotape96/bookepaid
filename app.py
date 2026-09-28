@@ -6,6 +6,26 @@ import os
 # --- 1. MUST BE THE FIRST STREAMLIT COMMAND ---
 st.set_page_config(page_title="BookepAId", page_icon="💜", layout="wide")
 
+# Inyección PWA: Manifest, Service Worker y Soporte iOS
+pwa_tags = """
+<link rel="manifest" href="/app/static/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BookepAId">
+<link rel="apple-touch-icon" href="/app/static/icon-192.png">
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/app/static/sw.js')
+        .then(reg => console.log('PWA Service Worker registered:', reg.scope))
+        .catch(err => console.log('Service Worker registration failed:', err));
+    });
+  }
+</script>
+"""
+st.markdown(pwa_tags, unsafe_allow_html=True)
+
 from auth import check_auth
 user = check_auth()
 business_id = user.business_id
