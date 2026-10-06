@@ -172,49 +172,98 @@ def get_latest_prices(df: pd.DataFrame) -> dict:
 
 
 def calculate_plate_cost(plate: dict, prices: dict) -> dict:
-    """Calculate cost of a plate based on latest ingredient prices."""
+    import re
+from rapidfuzz import fuzz, process
+
+COMMON_INVOICE_NOISE = {
+    "kg", "g", "l", "ml", "ctn", "box", "pkt", "pk", "bag", "tub", "tray",
+    "fresh", "frozen", "chilled", "prem", "premium", "bulk", "rnd", "approx",
+    "grade", "ea", "each", "imported", "local", "aus"
+}
+
+def clean_for_matching(text: str) -> str:
+    """Strip numbers, symbols, and standard packaging/spec noise."""
+    if not text:
+        return ""
+    # Lowercase and remove punctuation/special characters
+    text = re.sub(r'[^a-zA-Z\s]', ' ', text.lower())
+    # Remove isolated numbers or common package units
+    tokens = [
+        word for word in text.split()
+        if word not in COMMON_INVOICE_NOISE and len(word) > 1
+    ]
+    return " ".join(tokens)
+
+
+def calculate_plate_cost(plate: dict, prices: dict) -> dict:
+    """Calculate cost of a plate based on latest ingredient prices using tuned fuzzy matching."""
     total_cost = 0.0
     breakdown = []
+
+    # Pre-clean the invoice price keys mapping: {cleaned_text: original_key}
+    cleaned_price_map = {}
+    for raw_desc in prices.keys():
+        cleaned = clean_for_matching(raw_desc)
+        if cleaned:
+            cleaned_price_map[cleaned] = raw_desc
+
+    cleaned_invoice_keys = list(cleaned_price_map.keys())
+
     for ingredient in plate["ingredients"]:
-        key = ingredient["description"].lower().strip()
+        raw_ing_desc = ingredient["description"]
+        clean_ing_key = clean_for_matching(raw_ing_desc)
         qty = ingredient["quantity_kg"]
-        # Fuzzy match with minimum 80% similarity threshold
-        matches = process.extract(
-            key,
-            prices.keys(),
-            scorer=fuzz.token_sort_ratio,
-            limit=5
-        )
-        candidates = [
-            (match[0], prices[match[0]])
-            for match in matches
-            if match[1] >= 80  # minimum 80% similarity
-        ]
-        candidates.sort(key=lambda x: x[1], reverse=True)
+
+        candidates = []
+
+        if clean_ing_key and cleaned_invoice_keys:
+            # 1. token_set_ratio checks subset matches (handles "Pork Belly" inside "Pork Belly Skinless 15kg")
+            # 2. partial_token_set_ratio / token_set_ratio blend
+            matches = process.extract(
+                clean_ing_key,
+                cleaned_invoice_keys,
+                scorer=fuzz.token_set_ratio,
+                limit=5
+            )
+
+            # Filter with a calibrated 70% threshold
+            for cleaned_match, score, _ in matches:
+                if score >= 70:
+                    original_invoice_desc = cleaned_price_map[cleaned_match]
+                    candidates.append((original_invoice_desc, prices[original_invoice_desc], round(score, 1)))
+
         if candidates:
-            selected_price = candidates[0][1]
+            # Pick the highest scoring candidate (match score first, then price)
+            candidates.sort(key=lambda x: x[2], reverse=True)
+            best_match = candidates[0]
+            selected_price = best_match[1]
             cost = round(selected_price * qty, 4)
             total_cost += cost
+
             breakdown.append({
-                "ingredient": ingredient["description"],
+                "ingredient": raw_ing_desc,
                 "qty_g": round(qty * 1000, 1),
-                "candidates": candidates,
+                "candidates": [(c[0], c[1]) for c in candidates],
                 "unit_price": selected_price,
                 "cost": cost,
-                "matched": True
+                "matched": True,
+                "score": best_match[2]
             })
         else:
             breakdown.append({
-                "ingredient": ingredient["description"],
+                "ingredient": raw_ing_desc,
                 "qty_g": round(qty * 1000, 1),
                 "candidates": [],
                 "unit_price": None,
                 "cost": None,
-                "matched": False
+                "matched": False,
+                "score": 0
             })
+
     selling_price = plate.get("selling_price", 0)
     margin = round(selling_price - total_cost, 4) if selling_price > 0 else None
     margin_pct = round((margin / selling_price) * 100, 1) if selling_price and selling_price > 0 else None
+
     return {
         "name": plate["name"],
         "total_cost": total_cost,
