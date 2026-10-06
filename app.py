@@ -129,15 +129,13 @@ if page == "📥 Invoice Upload":
 
                     # 1. Get date and total detected by Claude from the invoice
                     invoice_date = df["date"].iloc[0] if "date" in df.columns and not df.empty else str(pd.Timestamp.now().date())
-                    invoice_total = float(df["total"].sum()) if "total" in df.columns and not df.empty else 0.0
 
                     # 2. Save invoice to database
                     business_id = user.business_id
                     invoice_record = save_invoice(
                         date=invoice_date,
                         filename=file_name,
-                        business_id=business_id,
-                        total=invoice_total
+                        business_id=business_id
                     )
 
                     # 3. Handle return value whether it's an ID or a dictionary
