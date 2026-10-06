@@ -83,7 +83,7 @@ if not plates_exist(business_id):
                     st.error(f"Something went wrong: {e}")
 
     st.caption("You can edit, delete, or add your own items after setup.")
-    st.stop()
+
 # ─────────────────────────────────────────
 # NAVIGATION
 # ─────────────────────────────────────────
@@ -98,49 +98,47 @@ if st.sidebar.button("🚪 Logout"):
 # ─────────────────────────────────────────
 # PAGE 1: INVOICE UPLOAD
 # ─────────────────────────────────────────
-if page == "📥 Invoice Upload":
-    st.title("📥 Invoice Upload")
-    st.write("Upload a supplier invoice — PDF or photo.")
+if page == "🧾 Invoice Upload":
+    st.title("🧾 Invoice Upload")
+    st.write("Upload a supplier invoice – PDF or photo.")
 
-    uploaded_file = st.file_uploader("Upload Invoice", type=["pdf", "jpg", "jpeg", "png"])
+    # 1. Clave dinámica para resetear el uploader automáticamente
+    if "invoice_uploader_key" not in st.session_state:
+        st.session_state.invoice_uploader_key = 0
+
+    uploaded_file = st.file_uploader(
+        "Upload Invoice", 
+        type=["pdf", "jpg", "jpeg", "png"],
+        key=f"invoice_file_{st.session_state.invoice_uploader_key}"
+    )
 
     if uploaded_file is not None:
         file_bytes = uploaded_file.read()
+        file_type = uploaded_file.type
+        file_name = uploaded_file.name
 
-        with st.spinner("Reading invoice with AI..."):
-            try:
-                file_type = uploaded_file.type
-                if file_type == "application/pdf":
-                    new_df = extract_invoice(file_bytes, uploaded_file.name)
-                else:
-                    new_df = extract_invoice_image(file_bytes, file_type, uploaded_file.name)
+        # 2. Botón explícito para que no se dispare solo en cada recarga
+        if st.button("Process Invoice with AI ✨", use_container_width=True):
+            with st.spinner("Reading invoice with AI..."):
+                try:
+                    # Extraer según sea PDF o imagen
+                    if file_type == "application/pdf":
+                        df = extract_invoice(file_bytes, file_name)
+                    else:
+                        df = extract_invoice_image(file_bytes, file_type, file_name)
 
-                invoice_number = new_df["invoice_number"].iloc[0] if "invoice_number" in new_df.columns else "UNKNOWN"
-                supplier = new_df["supplier"].iloc[0] if "supplier" in new_df.columns else "UNKNOWN"
-                date = new_df["date"].iloc[0] if "date" in new_df.columns else str(pd.Timestamp.now().date())
+                    # Guardar en base de datos usando el ID del negocio del usuario activo
+                    business_id = st.session_state.user.business_id
+                    save_invoice_data(df, business_id)
 
-                if is_duplicate_invoice(invoice_number, supplier, business_id):
-                    st.warning(f"⚠️ Invoice {invoice_number} from {supplier} has already been processed.")
-                    if st.button("🔄 Reprocess anyway"):
-                        st.session_state["force_reprocess"] = invoice_number
-                else:
-                    st.session_state["force_reprocess"] = invoice_number
+                    st.success("Invoice successfully processed and added to COGS!")
 
-                if st.session_state.get("force_reprocess") == invoice_number:
-                    st.success("✅ Extracted — please review before saving:")
-                    st.dataframe(new_df, use_container_width=True)
+                    # 3. Incrementar el contador para vaciar la caja del archivo y recargar limpio
+                    st.session_state.invoice_uploader_key += 1
+                    st.rerun()
 
-                    if st.button("💾 Confirm and Save"):
-                        invoice_id = save_invoice(invoice_number, supplier, str(date)[:10],
-                                                  uploaded_file.name, business_id)
-                        save_line_items(new_df, invoice_id, business_id)
-                        snapshot_plate_costs(str(date)[:10], business_id)
-                        st.session_state.pop("force_reprocess", None)
-                        st.success("✅ Invoice saved!")
-                        st.rerun()
-
-            except ValueError as e:
-                st.error(f"Could not process invoice: {e}")
+                except Exception as e:
+                    st.error(f"Error reading invoice: {e}")
 
 # ─────────────────────────────────────────
 # PAGE 2: DASHBOARD
