@@ -98,8 +98,8 @@ if st.sidebar.button("🚪 Logout"):
 # ─────────────────────────────────────────
 # PAGE 1: INVOICE UPLOAD
 # ─────────────────────────────────────────
-if page == "🧾 Invoice Upload":
-    st.title("🧾 Invoice Upload")
+if page == "📥 Invoice Upload":
+    st.title("📥 Invoice Upload")
     st.write("Upload a supplier invoice – PDF or photo.")
 
     # 1. Clave dinámica para resetear el uploader automáticamente
