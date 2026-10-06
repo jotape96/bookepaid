@@ -127,9 +127,11 @@ if page == "📥 Invoice Upload":
                     else:
                         df = extract_invoice_image(file_bytes, file_type, file_name)
 
-                    # Guardar en base de datos usando el ID del negocio del usuario activo
-                    business_id = st.session_state.user.business_id
-                    save_invoice_data(df, business_id)
+                    # save invoice and line items to database
+                    business_id = user.business_id
+                    invoice_record = save_invoice(business_id, file_name)
+                    invoice_id = invoice_record["id"]
+                    save_line_items(df, invoice_id)
 
                     st.success("Invoice successfully processed and added to COGS!")
 
