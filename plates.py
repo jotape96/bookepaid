@@ -130,7 +130,7 @@ def generate_plates_for_restaurant(restaurant_type: str) -> list:
     client = anthropic.Anthropic(api_key=api_key)
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=4096,
+        max_tokens=8192,
         messages=[
             {
                 "role": "user",
@@ -273,6 +273,21 @@ def calculate_plate_cost(plate: dict, prices: dict) -> dict:
         "breakdown": breakdown,
         "has_unmatched": any(not b["matched"] for b in breakdown)
     }
+
+
+
+
+def _parse_menu_response(raw: str) -> list:
+    """Clean markdown code blocks and safely parse JSON string from Claude."""
+    raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        print(f"DEBUG: Truncated JSON at end -> {raw[-300:]}")
+        raise ValueError(f"Menu JSON malformed or truncated: {e}")
+
+
+# 2. extract_plates_from_menu SITS DIRECTLY BELOW IT:
 def extract_plates_from_menu(file_bytes: bytes, file_type: str) -> list:
     """Read a menu photo or PDF and extract dishes with typical ingredients."""
     api_key = os.environ.get("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
@@ -303,8 +318,8 @@ def extract_plates_from_menu(file_bytes: bytes, file_type: str) -> list:
 
     content.append({
         "type": "text",
-        "text": """This is a restaurant or café menu. Extract all food and drink items.
-For each item generate typical raw ingredients needed to make it.
+        "text": """This is a restaurant or café menu. Extract food dishes, specialty loaded desserts, and signature drinks that require ingredient costing.
+For each item, generate typical raw ingredients needed to make it.
 Return ONLY a valid JSON array, without markdown code fences or conversational text.
 
 Each object must follow this structure:
@@ -314,26 +329,25 @@ Each object must follow this structure:
   - description (string): standard wholesale ingredient name (MAX 3 words, e.g. "Rice Noodles", "Barramundi Fillet", "Chicken Breast", "Tamarind Paste").
   - quantity_kg (number): realistic quantity in kg per serving (e.g. 0.15 for 150g)
 
-CRITICAL INGREDIENT RULES:
-- NEVER include dimensions, measurements, or cuts in parentheses (e.g., write "Rice Noodles", NEVER "Flat Noodles (3mm wide)").
-- NEVER include preparation methods (e.g., write "Pork Belly", NEVER "Crispy roasted pork belly").
-PROTEIN OPTIONS RULE:
-- If a menu item states "Choice of chicken, beef, prawns or tofu", DO NOT create a single generic dish.
-- Instead, create separate dish entries for each option (e.g. "Pad Thai - Chicken", "Pad Thai - Beef", "Pad Thai - Prawns").
-- Keep base ingredients identical across these variants, changing only the protein item and adjusting the selling price if the menu specifies a surcharge."""
+CRITICAL RULES:
+- SKIP standard basic hot drinks, teas, and retail pre-packaged bottles/cans (e.g., skip espresso, flat whites, plain teas, canned Coke, bottled water).
+- FOCUS on cooked mains, breakfast items, loaded plates, burgers, bowls, specialty shakes, and loaded desserts.
+- Limit each dish to its 3 to 5 core high-cost ingredients.
+- NEVER include dimensions, measurements, cuts in parentheses, or prep methods (e.g., write "Pork Belly", NEVER "Crispy roasted pork belly").
+- If a dish offers protein choices (e.g. "Choice of chicken, beef, prawns"), output separate dish entries: "Dish - Chicken", "Dish - Beef".
+- Return ONLY the valid JSON array. Never truncate the JSON."""
     })
 
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=4096,
+        max_tokens=8192,
         messages=[{"role": "user", "content": content}]
     )
 
     raw = response.content[0].text
-    raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-    plates = json.loads(raw)
+    # _parse_menu_response is called right here:
+    plates = _parse_menu_response(raw)
 
-    # Post-procesamiento para garantizar limpieza de descripciones
     for plate in plates:
         for ing in plate.get("ingredients", []):
             ing["description"] = clean_ingredient_description(ing.get("description", ""))
