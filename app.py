@@ -52,7 +52,7 @@ if not plates_exist(business_id):
 
     with tab1:
         st.write("Take a photo of your menu and we'll extract your dishes automatically.")
-        menu_file = st.file_uploader("Upload menu photo", type=["jpg", "jpeg", "png", "pdf"])
+        menu_file = st.file_uploader("Upload menu photo", type=["jpg", "jpeg", "png", "pdf"],accept_multiple_files=True, key="menu_upload")
 
         if menu_file is not None:
             if st.button("Generate from Menu ✨"):
