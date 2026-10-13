@@ -287,69 +287,81 @@ def _parse_menu_response(raw: str) -> list:
         raise ValueError(f"Menu JSON malformed or truncated: {e}")
 
 
-# 2. extract_plates_from_menu SITS DIRECTLY BELOW IT:
-def extract_plates_from_menu(file_bytes: bytes, file_type: str) -> list:
-    """Read a menu photo or PDF and extract dishes with typical ingredients."""
+def extract_menu_catalog(file_bytes: bytes, file_type: str) -> list:
+    """Fast, lightweight scan: extracts only dish names and prices from menu image/PDF."""
     api_key = os.environ.get("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
     client = anthropic.Anthropic(api_key=api_key)
 
     if file_type == "application/pdf":
-        content = [
-            {
-                "type": "document",
-                "source": {
-                    "type": "base64",
-                    "media_type": "application/pdf",
-                    "data": base64.b64encode(file_bytes).decode("utf-8")
-                }
+        media_block = {
+            "type": "document",
+            "source": {
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": base64.b64encode(file_bytes).decode("utf-8")
             }
-        ]
+        }
     else:
-        content = [
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": file_type,
-                    "data": base64.b64encode(file_bytes).decode("utf-8")
-                }
+        media_block = {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": file_type,
+                "data": base64.b64encode(file_bytes).decode("utf-8")
             }
-        ]
+        }
 
-    content.append({
-        "type": "text",
-        "text": """This is a restaurant or café menu. Extract food dishes, specialty loaded desserts, and signature drinks that require ingredient costing.
-For each item, generate typical raw ingredients needed to make it.
-Return ONLY a valid JSON array, without markdown code fences or conversational text.
-
-Each object must follow this structure:
-- name (string): exact menu item name
-- selling_price (number): numeric price shown on the menu, 0 if not found
-- ingredients (array): list of raw ingredient objects, each containing:
-  - description (string): standard wholesale ingredient name (MAX 3 words, e.g. "Rice Noodles", "Barramundi Fillet", "Chicken Breast", "Tamarind Paste").
-  - quantity_kg (number): realistic quantity in kg per serving (e.g. 0.15 for 150g)
-
-CRITICAL RULES:
-- SKIP standard basic hot drinks, teas, and retail pre-packaged bottles/cans (e.g., skip espresso, flat whites, plain teas, canned Coke, bottled water).
-- FOCUS on cooked mains, breakfast items, loaded plates, burgers, bowls, specialty shakes, and loaded desserts.
-- Limit each dish to its 3 to 5 core high-cost ingredients.
-- NEVER include dimensions, measurements, cuts in parentheses, or prep methods (e.g., write "Pork Belly", NEVER "Crispy roasted pork belly").
-- If a dish offers protein choices (e.g. "Choice of chicken, beef, prawns"), output separate dish entries: "Dish - Chicken", "Dish - Beef".
-- Return ONLY the valid JSON array. Never truncate the JSON."""
-    })
+    prompt = """Scan this menu and extract every food and specialty drink item with its listed price.
+Return ONLY a valid JSON array of objects with no markdown fences or intro:
+[
+  {"name": "Dish Name", "selling_price": 24.50}
+]
+If no price is found, use 0.0. Ignore headers, descriptions, and dietary notes."""
 
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=8192,
-        messages=[{"role": "user", "content": content}]
+        max_tokens=2500,
+        messages=[{"role": "user", "content": [media_block, {"type": "text", "text": prompt}]}]
     )
 
-    raw = response.content[0].text
-    # _parse_menu_response is called right here:
-    plates = _parse_menu_response(raw)
+    return _parse_menu_response(response.content[0].text)
 
+
+def generate_ingredients_for_dishes(selected_dishes: list) -> list:
+    """Generate wholesale ingredients and kg measurements only for the user-selected dishes."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
+    client = anthropic.Anthropic(api_key=api_key)
+
+    prompt = f"""For each of these dishes, provide 3 to 5 typical raw wholesale ingredients and realistic kg quantities per serving.
+
+Dishes to cost:
+{json.dumps(selected_dishes, indent=2)}
+
+Return ONLY a valid JSON array:
+[
+  {{
+    "name": "Dish Name",
+    "selling_price": 24.50,
+    "ingredients": [
+      {{"description": "Chicken Breast", "quantity_kg": 0.20}},
+      {{"description": "Olive Oil", "quantity_kg": 0.02}}
+    ]
+  }}
+]
+
+CRITICAL:
+- Standard wholesale descriptions (MAX 3 words, e.g., 'Eggs', 'Sourdough Bread').
+- Never include cooking styles or cuts in parentheses.
+- Return ONLY valid JSON."""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=4096,
+        messages=[{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+    )
+
+    plates = _parse_menu_response(response.content[0].text)
     for plate in plates:
         for ing in plate.get("ingredients", []):
             ing["description"] = clean_ingredient_description(ing.get("description", ""))
-
     return plates

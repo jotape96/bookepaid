@@ -51,21 +51,57 @@ if not plates_exist(business_id):
     tab1, tab2 = st.tabs(["📷 Upload your menu", "🍽️ Choose restaurant type"])
 
     with tab1:
-        st.write("Take a photo of your menu and we'll extract your dishes automatically.")
-        menu_file = st.file_uploader("Upload menu photo", type=["jpg", "jpeg", "png", "pdf"],accept_multiple_files=True, key="menu_upload")
+        st.write("Upload your menu PDF or photo to scan dish names and prices.")
+        menu_file = st.file_uploader("Upload menu", type=["pdf", "jpg", "jpeg", "png"])
 
-        if menu_file is not None:
-            if st.button("Generate from Menu ✨"):
-                with st.spinner("Reading your menu..."):
+        if menu_file and "detected_catalog" not in st.session_state:
+            if st.button("Scan Menu Dishes 🔍", use_container_width=True):
+                with st.spinner("Scanning menu items and prices..."):
                     try:
-                        file_bytes = menu_file.read()
-                        plates = extract_plates_from_menu(file_bytes, menu_file.type)
-                        for plate in plates:
-                            save_plate(plate, business_id)
-                        st.success(f"✅ Found {len(plates)} menu items!")
+                        catalog = extract_menu_catalog(menu_file.read(), menu_file.type)
+                        st.session_state.detected_catalog = catalog
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Something went wrong: {e}")
+                        st.error(f"Error scanning menu: {e}")
+
+        # Once scanned, show selection UI
+        if "detected_catalog" in st.session_state:
+            catalog = st.session_state.detected_catalog
+            st.success(f"✅ Detected {len(catalog)} menu items!")
+            st.write("Select which dishes you want to generate recipe costing for:")
+
+            # Options formatted nicely with price
+            item_map = {f"{item['name']} (${item['selling_price']:.2f})": item for item in catalog}
+            
+            # Default to selecting everything, but user can easily deselect
+            selected_labels = st.multiselect(
+                "Choose items to cost",
+                options=list(item_map.keys()),
+                default=list(item_map.keys())
+            )
+
+            col_proc, col_reset = st.columns([3, 1])
+            with col_proc:
+                if st.button("Build Costing for Selected Items ✨", type="primary", use_container_width=True):
+                    if not selected_labels:
+                        st.warning("Please select at least one dish.")
+                    else:
+                        chosen_items = [item_map[lbl] for lbl in selected_labels]
+                        with st.spinner(f"Generating recipe ingredients for {len(chosen_items)} dishes..."):
+                            try:
+                                final_plates = generate_ingredients_for_dishes(chosen_items)
+                                for plate in final_plates:
+                                    save_plate(plate, business_id)
+                                del st.session_state.detected_catalog
+                                st.success("✅ Dishes configured and saved!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error generating recipes: {e}")
+
+            with col_reset:
+                if st.button("Scan Again 🔄", use_container_width=True):
+                    del st.session_state.detected_catalog
+                    st.rerun()
 
     with tab2:
         st.write("Tell us what kind of business you run and we'll generate typical menu items.")
