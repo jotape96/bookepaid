@@ -127,24 +127,26 @@ if page == "📥 Invoice Upload":
                     else:
                         df = extract_invoice_image(file_bytes, file_type, file_name)
 
-                    # 1. Get date and total detected by Claude from the invoice
+                    # 1. Grab all invoice metadata extracted by Claude
                     invoice_date = df["date"].iloc[0] if "date" in df.columns and not df.empty else str(pd.Timestamp.now().date())
+                    invoice_number = str(df["invoice_number"].iloc[0]) if "invoice_number" in df.columns and not df.empty else "UNKNOWN"
+                    supplier = str(df["supplier"].iloc[0]) if "supplier" in df.columns and not df.empty else "UNKNOWN"
 
-                    # 2. Save invoice to database
+                    # 2. Save invoice with all 5 required parameters
                     business_id = user.business_id
                     invoice_record = save_invoice(
                         date=invoice_date,
                         filename=file_name,
-                        business_id=business_id
+                        business_id=business_id,
+                        invoice_number=invoice_number,
+                        supplier=supplier
                     )
 
-                    # 3. Handle return value whether it's an ID or a dictionary
+                    # 3. Save line items and reset view cleanly
                     invoice_id = invoice_record["id"] if isinstance(invoice_record, dict) else invoice_record
                     save_line_items(df, invoice_id)
 
                     st.success("Invoice successfully processed and added to COGS!")
-
-                    # 4. Clear the uploader and refresh cleanly
                     st.session_state.invoice_uploader_key += 1
                     st.rerun()
 
