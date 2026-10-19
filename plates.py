@@ -177,18 +177,27 @@ COMMON_INVOICE_NOISE = {
     "grade", "ea", "each", "imported", "local", "aus"
 }
 
-def clean_for_matching(text: str) -> str:
-    """Strip numbers, symbols, and standard packaging/spec noise."""
-    if not text:
-        return ""
-    # Lowercase and remove punctuation/special characters
-    text = re.sub(r'[^a-zA-Z\s]', ' ', text.lower())
-    # Remove isolated numbers or common package units
-    tokens = [
-        word for word in text.split()
-        if word not in COMMON_INVOICE_NOISE and len(word) > 1
-    ]
-    return " ".join(tokens)
+def clean_for_matching(text):
+    text = text.lower().replace("'", "")
+    text = re.sub(r"\([^)]*\)", " ", text)                              
+    text = re.sub(r"\b\d+(\.\d+)?\s*(kg|g|ml|l|lb|oz)\b", " ", text)    
+    text = re.sub(r"[^a-z\s]", " ", text)                               
+    words = [w for w in text.split() if w not in NOISE_WORDS]
+    return " ".join(words)
+
+def build_match_index(prices):
+    """Clean the invoice catalogue once, instead of once per ingredient."""
+    return {clean_for_matching(raw): raw for raw in prices if clean_for_matching(raw)}
+
+
+def find_candidates(description, prices, index, threshold=65, limit=5):
+    cleaned = clean_for_matching(description)
+    if not cleaned or not index:
+        return []
+    matches = process.extract(
+        cleaned, index.keys(), scorer=fuzz.token_set_ratio, limit=limit
+    )
+    return [(index[m[0]], prices[index[m[0]]]) for m in matches if m[1] >= threshold]
 
 
 def calculate_plate_cost(plate: dict, prices: dict) -> dict:
