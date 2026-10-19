@@ -180,7 +180,7 @@ if page == "📥 Invoice Upload":
 
                     # 3. Save line items and reset view cleanly
                     invoice_id = invoice_record["id"] if isinstance(invoice_record, dict) else invoice_record
-                    save_line_items(df, invoice_id)
+                    save_line_items(df, invoice_id, business_id)
 
                     st.success("Invoice successfully processed and added to COGS!")
                     st.session_state.invoice_uploader_key += 1
