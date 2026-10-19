@@ -324,23 +324,28 @@ If no price is found, use 0.0. Ignore headers, descriptions, and dietary notes."
 
 
 def generate_ingredients_for_dishes(selected_dishes: list) -> list:
-    """Generate wholesale ingredients and kg measurements only for the user-selected dishes."""
+    """Generate wholesale ingredients and kg measurements in safe batches to avoid token limits."""
     api_key = os.environ.get("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
     client = anthropic.Anthropic(api_key=api_key)
 
-    prompt = f"""For each of these dishes, provide 3 to 5 typical raw wholesale ingredients and realistic kg quantities per serving.
+    all_plates = []
+    batch_size = 12  # Lotes seguros de 12 platos por llamada
+
+    for i in range(0, len(selected_dishes), batch_size):
+        batch = selected_dishes[i:i + batch_size]
+
+        prompt = f"""For each of these dishes, provide 3 to 5 typical raw wholesale ingredients and realistic kg quantities per serving.
 
 Dishes to cost:
-{json.dumps(selected_dishes, indent=2)}
+{json.dumps(batch, indent=2)}
 
 Return ONLY a valid JSON array:
 [
   {{
-    "name": "Dish Name",
-    "selling_price": 24.50,
+    "name": "Exact Dish Name",
+    "selling_price": 0.0,
     "ingredients": [
-      {{"description": "Chicken Breast", "quantity_kg": 0.20}},
-      {{"description": "Olive Oil", "quantity_kg": 0.02}}
+      {{"description": "Ingredient Name", "quantity_kg": 0.15}}
     ]
   }}
 ]
@@ -348,16 +353,19 @@ Return ONLY a valid JSON array:
 CRITICAL:
 - Standard wholesale descriptions (MAX 3 words, e.g., 'Eggs', 'Sourdough Bread').
 - Never include cooking styles or cuts in parentheses.
-- Return ONLY valid JSON."""
+- Return ONLY valid JSON array."""
 
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=4096,
-        messages=[{"role": "user", "content": [{"type": "text", "text": prompt}]}]
-    )
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=4096,
+            messages=[{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+        )
 
-    plates = _parse_menu_response(response.content[0].text)
-    for plate in plates:
-        for ing in plate.get("ingredients", []):
-            ing["description"] = clean_ingredient_description(ing.get("description", ""))
-    return plates
+        batch_plates = _parse_menu_response(response.content[0].text)
+
+        for plate in batch_plates:
+            for ing in plate.get("ingredients", []):
+                ing["description"] = clean_ingredient_description(ing.get("description", ""))
+            all_plates.append(plate)
+
+    return all_plates
