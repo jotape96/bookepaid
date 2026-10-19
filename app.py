@@ -35,7 +35,7 @@ from data import (load_data, is_duplicate_invoice, save_invoice,
                   save_line_items, snapshot_plate_costs, load_plate_history)
 from invoice import extract_invoice, extract_invoice_image
 from pdf_export import generate_pdf
-from plates import (load_plates, save_plate, update_plate, delete_plate,
+from plates import (load_plates,build_match_index, find_candidates, save_plate, update_plate, delete_plate,
                     plates_exist, get_latest_prices, calculate_plate_cost,
                     generate_plates_for_restaurant, extract_menu_catalog,
                     generate_ingredients_for_dishes, RESTAURANT_TYPES)
@@ -446,13 +446,10 @@ elif page == "🍽️ Plate Costing":
             to_delete_uid = None
             running_total = 0.0
 
+            matches_index = build_match_index(prices)
             for ingredient in st.session_state[state_key]:
                 uid = ingredient["uid"]
-                key = ingredient["description"].lower().strip()
-                from rapidfuzz import process, fuzz
-                matches = process.extract(key, prices.keys(), scorer=fuzz.token_sort_ratio, limit=5)
-                candidates = [(m[0], prices[m[0]]) for m in matches if m[1] >= 80]
-                candidates.sort(key=lambda x: x[1], reverse=True)
+                candidates = find_candidates(ingredient["description"], prices, matches_index)
 
                 col1, col2, col3, col4, col5 = st.columns([3, 1, 2, 2, 1])
                 with col1:
