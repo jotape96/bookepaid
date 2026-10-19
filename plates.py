@@ -182,7 +182,7 @@ def clean_for_matching(text):
     text = re.sub(r"\([^)]*\)", " ", text)                              
     text = re.sub(r"\b\d+(\.\d+)?\s*(kg|g|ml|l|lb|oz)\b", " ", text)    
     text = re.sub(r"[^a-z\s]", " ", text)                               
-    words = [w for w in text.split() if w not in NOISE_WORDS]
+    words = [w for w in text.split() if w not in COMMON_INVOICE_NOISE]
     return " ".join(words)
 
 def build_match_index(prices):
