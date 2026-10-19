@@ -171,10 +171,6 @@ def get_latest_prices(df: pd.DataFrame) -> dict:
     return latest.to_dict()
 
 
-def calculate_plate_cost(plate: dict, prices: dict) -> dict:
-    import re
-from rapidfuzz import fuzz, process
-
 COMMON_INVOICE_NOISE = {
     "kg", "g", "l", "ml", "ctn", "box", "pkt", "pk", "bag", "tub", "tray",
     "fresh", "frozen", "chilled", "prem", "premium", "bulk", "rnd", "approx",

@@ -37,8 +37,8 @@ from invoice import extract_invoice, extract_invoice_image
 from pdf_export import generate_pdf
 from plates import (load_plates, save_plate, update_plate, delete_plate,
                     plates_exist, get_latest_prices, calculate_plate_cost,
-                    generate_plates_for_restaurant, extract_plates_from_menu,
-                    RESTAURANT_TYPES)
+                    generate_plates_for_restaurant, extract_menu_catalog,
+                    generate_ingredients_for_dishes, RESTAURANT_TYPES)
 
 # ─────────────────────────────────────────
 # ONBOARDING — runs once if no plates exist
