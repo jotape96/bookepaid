@@ -176,13 +176,20 @@ COMMON_INVOICE_NOISE = {
     "fresh", "frozen", "chilled", "prem", "premium", "bulk", "rnd", "approx",
     "grade", "ea", "each", "imported", "local", "aus"
 }
+SYNONYMS = {
+    "mince": "ground", "minced": "ground",
+    "capsicum": "pepper", "coriander": "cilantro",
+    "prawn": "shrimp", "prawns": "shrimp",
+    "eggplant": "aubergine", "zucchini": "courgette",
+    "rocket": "arugula", "scallion": "shallot",
+}
 
 def clean_for_matching(text):
     text = text.lower().replace("'", "")
     text = re.sub(r"\([^)]*\)", " ", text)                              
     text = re.sub(r"\b\d+(\.\d+)?\s*(kg|g|ml|l|lb|oz)\b", " ", text)    
     text = re.sub(r"[^a-z\s]", " ", text)                               
-    words = [w for w in text.split() if w not in COMMON_INVOICE_NOISE]
+    words = [SYNONYMS.get(w, w) for w in text.split() if w not in NOISE_WORDS]
     return " ".join(words)
 
 def build_match_index(prices):
